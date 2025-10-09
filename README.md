@@ -3,7 +3,7 @@
 Prototype workspace for generating BrightScript encode/decode modules from Protocol Buffers definitions. The current slice already:
 
 - Parses `.proto` files (starting with `proto/simple.proto`).
-- Emits BrightScript runtime helpers and message-specific encoders/decoders (currently supporting `string` and `int32`) into `roku-app/source/generated/`.
+- Emits BrightScript runtime helpers and message-specific encoders/decoders (currently supporting `string`, `int32`, `int64`, `bool`, and `bytes`) into `roku-app/source/generated/`.
 - Produces JavaScript baseline vectors (JSON + BrightScript data) using `protobufjs` for parity checks.
 - Loads the generated code and baseline data inside a Roku harness (`roku-app/source/main.brs`) to compare results.
 

@@ -17,3 +17,7 @@ message FlagMessage {
 message BytesMessage {
   bytes data = 1;
 }
+
+message LongMessage {
+  int64 total = 1;
+}

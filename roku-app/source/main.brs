@@ -20,7 +20,15 @@ sub Main()
 
     for each testCase in cases
         typeName = testCase.type
-        print "Verifying type: "; typeName
+        sampleLabel = invalid
+        if GetInterface(testCase, "ifAssociativeArray") <> invalid then
+            sampleLabel = testCase.Lookup("sampleLabel")
+        end if
+        if sampleLabel <> invalid and sampleLabel <> "" then
+            print "Verifying type: "; typeName; " ["; sampleLabel; "]"
+        else
+            print "Verifying type: "; typeName
+        end if
 
         if handlers = invalid or handlers.DoesExist(typeName) = false then
             print "  Missing handler for type."; typeName
@@ -50,18 +58,76 @@ sub Main()
         encodeMatch = actualEncoded = expectedEncoded
         decodeMatch = decodedValue = expectedValue
 
-            if encodeMatch and decodeMatch then
-                print "  OK"
-                passed = passed + 1
-            else
-                print "  FAIL"
-                print "    expected encode: "; expectedEncoded
-                print "    actual encode:   "; actualEncoded
-                print "    expected value:  "; expectedValue
-                print "    actual value:    "; decodedValue
-            end if
+        if encodeMatch and decodeMatch then
+            print "  OK"
+            passed = passed + 1
+        else
+            print "  FAIL"
+            print "    expected encode: "; expectedEncoded
+            print "    actual encode:   "; actualEncoded
+            print "    expected value:  "; expectedValue
+            print "    actual value:    "; decodedValue
+            LogMismatchDetails(testCase, expectedEncoded, actualEncoded, testCase.decoded, decodedResult)
+        end if
         end if
     end for
 
     print "Summary: "; passed; " of "; total; " cases passed."
 end sub
+
+sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEncoded as String, baselineDecoded as Object, runtimeDecoded as Object)
+    print "    -- mismatch diagnostics --"
+    baselineBytes = __pb_fromBase64(baselineEncoded)
+    runtimeBytes = __pb_fromBase64(runtimeEncoded)
+    print "    baseline bytes ("; safeCount(baselineBytes); "): "; ByteArrayToHex(baselineBytes)
+    print "    runtime  bytes ("; safeCount(runtimeBytes); "): "; ByteArrayToHex(runtimeBytes)
+    printDecodedAssociative("    baseline decoded", baselineDecoded)
+    printDecodedAssociative("    runtime  decoded", runtimeDecoded)
+    sampleLabel = invalid
+    if GetInterface(testCase, "ifAssociativeArray") <> invalid then
+        sampleLabel = testCase.Lookup("sampleLabel")
+    end if
+    if sampleLabel <> invalid and sampleLabel <> "" then
+        print "    sample label: "; sampleLabel
+    end if
+    print "    case meta: type="; testCase.type; " field="; testCase.field; " fieldId="; testCase.fieldId
+    print "    ---------------------------"
+end sub
+
+function ByteArrayToHex(bytes as Object) as String
+    if bytes = invalid then return "<invalid>"
+    hex = ""
+    for i = 0 to bytes.Count() - 1
+        value = bytes[i]
+        hexByte = UCase(StrI(value, 16))
+        if Len(hexByte) < 2 then
+            hexByte = Right("0" + hexByte, 2)
+        end if
+        hex = hex + hexByte
+        if i < bytes.Count() - 1 then
+            hex = hex + " "
+        end if
+    end for
+    return hex
+end function
+
+sub printDecodedAssociative(prefix as String, data as Object)
+    if data = invalid then
+        print prefix; ": <invalid>"
+        return
+    end if
+    if GetInterface(data, "ifAssociativeArray") = invalid then
+        print prefix; ": "; data
+        return
+    end if
+    print prefix; ":"
+    keys = data.Keys()
+    for each key in keys
+        print "        "; key; " => "; data[key]
+    end for
+end sub
+
+function safeCount(bytes as Object) as Integer
+    if bytes = invalid then return 0
+    return bytes.Count()
+end function
