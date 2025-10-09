@@ -135,11 +135,7 @@ function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value:
         { value: 2147483647, label: "max" }
       ];
     case "int64":
-      return [
-        { value: "0", label: "zero" },
-        { value: String(descriptor.field.id * 1000000000 + 12345), label: "mid" },
-        { value: "9007199254740991", label: "safe-max" }
-      ];
+      return buildInt64Samples(descriptor);
     case "bool":
       return [
         { value: false, label: "false" },
@@ -152,6 +148,48 @@ function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value:
         { value: Buffer.from([descriptor.field.id, descriptor.field.id + 1, descriptor.field.id + 2]).toString("base64"), label: "pattern" }
       ];
   }
+}
+
+function buildInt64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: string; label: string }> {
+  const dynamicMid = String(descriptor.field.id * 1000000000 + 12345);
+  const entries: Array<{ value: string; label: string }> = [
+    { value: "0", label: "zero" },
+    { value: "1", label: "one" },
+    { value: "63", label: "one-byte-max-minus" },
+    { value: "64", label: "two-byte-min" },
+    { value: "127", label: "one-byte-max" },
+    { value: "128", label: "two-byte-boundary" },
+    { value: "255", label: "two-byte-mid" },
+    { value: "256", label: "two-byte-plus-one" },
+    { value: "16383", label: "two-byte-max" },
+    { value: "16384", label: "three-byte-boundary" },
+    { value: "2097151", label: "three-byte-max" },
+    { value: "2097152", label: "four-byte-boundary" },
+    { value: dynamicMid, label: "mid" },
+    { value: "2147483647", label: "int32-max" },
+    { value: "4294967295", label: "uint32-max" },
+    { value: "9007199254740991", label: "safe-max" },
+    { value: "9223372036854775807", label: "int64-max" },
+    { value: "-1", label: "neg-one" },
+    { value: "-63", label: "neg-one-byte-max" },
+    { value: "-64", label: "neg-two-byte-min" },
+    { value: "-128", label: "neg-two-byte-boundary" },
+    { value: "-129", label: "neg-nine-bit" },
+    { value: "-2147483648", label: "int32-min" },
+    { value: "-9007199254740991", label: "neg-safe-max" },
+    { value: "-9223372036854775808", label: "int64-min" }
+  ];
+
+  const seen = new Set<string>();
+  const samples: Array<{ value: string; label: string }> = [];
+  for (const entry of entries) {
+    if (seen.has(entry.value)) {
+      continue;
+    }
+    seen.add(entry.value);
+    samples.push(entry);
+  }
+  return samples;
 }
 
 function escapeBrsString(value: string): string {

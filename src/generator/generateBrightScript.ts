@@ -74,29 +74,311 @@ function __pb_createByteArray() as Object
     return CreateObject("roByteArray")
 end function
 
+function __pb_truncate(value as Double) as Double
+    if value = invalid then return 0
+    remainder = value MOD 1
+    return value - remainder
+end function
+
 function __pb_writeVarint(target as Object, value as Integer) as Void
-    v = value
-    if v < 0 then v = 0
-    while v >= 128
-        byte = (v AND &h7F) OR &h80
-        target.Push(byte)
-        v = Int(v / 128)
+    if target = invalid then return
+    if value = invalid then return
+    v = __pb_truncate(value)
+    if v < 0 then
+        unsigned32 = 4294967296# + v
+        __pb_writeVarint64(target, unsigned32)
+        return
+    end if
+    decimalValue = __pb_doubleToDecimalString(v)
+    __pb_writeVarint64(target, decimalValue)
+end function
+
+function __pb_trimLeadingZeros(value as String) as String
+    if value = invalid then return "0"
+    length = Len(value)
+    i = 0
+    while i < length and Mid(value, i + 1, 1) = "0"
+        i = i + 1
     end while
-    target.Push(v)
+    if i >= length then return "0"
+    return Mid(value, i + 1)
+end function
+
+function __pb_allDigits(value as String) as Boolean
+    if value = invalid then return false
+    length = Len(value)
+    if length = 0 then return false
+    zero = Asc("0")
+    nine = Asc("9")
+    for i = 0 to length - 1
+        code = Asc(Mid(value, i + 1, 1))
+        if code < zero or code > nine then return false
+    end for
+    return true
+end function
+
+function __pb_doubleToDecimalString(num as Double) as String
+    if num = 0 then return "0"
+    strValue = FormatJson(num)
+    strType = Type(strValue)
+    if strType = "String" or strType = "roString" then
+        cleaned = strValue.Trim()
+        cleaned = cleaned.Replace(Chr(13), "")
+        cleaned = cleaned.Replace(Chr(10), "")
+        if cleaned <> "" then
+            first = Left(cleaned, 1)
+            if first = "+"
+                cleaned = Mid(cleaned, 2)
+            else if first = "-"
+                cleaned = Mid(cleaned, 2)
+                ' negative numbers handled by caller
+            end if
+            if InStr(1, LCase(cleaned), "e") = 0 and InStr(1, cleaned, ".") = 0 and __pb_allDigits(cleaned) then
+                return __pb_trimLeadingZeros(cleaned)
+            end if
+        end if
+    end if
+    current = __pb_truncate(num)
+    digits = ""
+    while current > 0
+        remainder = current MOD 10
+        digits = Chr(remainder + 48) + digits
+        current = __pb_truncate(current / 10)
+    end while
+    if digits = "" then digits = "0"
+    return __pb_trimLeadingZeros(digits)
+end function
+
+function __pb_normalizeUnsignedDecimal(value as Dynamic) as Dynamic
+    if value = invalid then return invalid
+    valueType = Type(value)
+    if valueType = "String" or valueType = "roString" then
+        str = value.Trim()
+        if str = "" then return invalid
+        first = Left(str, 1)
+        if first = "+"
+            str = Mid(str, 2)
+        else if first = "-"
+            return invalid
+        end if
+        if not __pb_allDigits(str) then return invalid
+        return __pb_trimLeadingZeros(str)
+    else if valueType = "Boolean" or valueType = "roBoolean" then
+        if value = true then return "1" else return "0"
+    end if
+    num = __pb_toLong(value)
+    if num < 0 then return invalid
+    return __pb_doubleToDecimalString(num)
+end function
+
+function __pb_decimalDivMod(value as String, divisor as Integer) as Object
+    remainder = 0
+    quotient = ""
+    length = Len(value)
+    for i = 0 to length - 1
+        digit = Asc(Mid(value, i + 1, 1)) - Asc("0")
+        remainder = remainder * 10 + digit
+        qdigit = 0
+        while remainder >= divisor
+            remainder = remainder - divisor
+            qdigit = qdigit + 1
+        end while
+        if Len(quotient) > 0 or qdigit <> 0 then
+            quotient = quotient + Chr(qdigit + Asc("0"))
+        end if
+    end for
+    if Len(quotient) = 0 then quotient = "0"
+    quotient = __pb_trimLeadingZeros(quotient)
+    result = {}
+    result.quotient = quotient
+    result.remainder = remainder
+    return result
+end function
+
+function __pb_buildVarintFromDecimal(value as String) as Object
+    bytes = []
+    if value = "0" then
+        bytes.Push(0)
+        return bytes
+    end if
+    current = value
+    while current <> "0"
+        parts = __pb_decimalDivMod(current, 128)
+        bytes.Push(__pb_truncate(parts.remainder))
+        current = parts.quotient
+    end while
+    count = bytes.Count()
+    for i = 0 to count - 2
+        bytes[i] = (bytes[i] OR &h80) AND &hFF
+    end for
+    return bytes
 end function
 
 function __pb_writeVarint64(target as Object, value as Dynamic) as Void
-    longVal = CDbl(__pb_toLong(value))
-    if longVal < 0 then
-        longVal = longVal + 18446744073709551616#
+    if target = invalid then return
+    normalized = __pb_normalizeUnsignedDecimal(value)
+    if normalized = invalid then
+        valueType = Type(value)
+        if valueType = "String" or valueType = "roString" then
+            str = value.Trim()
+            if str = "" then return
+            negative = false
+            first = Left(str, 1)
+            if first = "-"
+                negative = true
+                str = Mid(str, 2)
+            else if first = "+"
+                str = Mid(str, 2)
+            end if
+            str = str.Trim()
+            if str = "" then return
+            if not __pb_allDigits(str) then return
+            trimmed = __pb_trimLeadingZeros(str)
+            if trimmed = "0" then
+                normalized = "0"
+            else if negative then
+                normalized = __pb_decimalSubtract("18446744073709551616", trimmed)
+            else
+                normalized = trimmed
+            end if
+        else
+            num = __pb_toLong(value)
+            if num < 0 then
+                magnitude = __pb_doubleToDecimalString(0 - num)
+                normalized = __pb_decimalSubtract("18446744073709551616", magnitude)
+            else
+                normalized = __pb_doubleToDecimalString(num)
+            end if
+        end if
     end if
-    while longVal >= 128
-        remainder = longVal - 128 * Fix(longVal / 128)
-        byte = Int(remainder) + 128
-        target.Push(byte)
-        longVal = Fix(longVal / 128)
+    bytes = __pb_buildVarintFromDecimal(normalized)
+    for i = 0 to bytes.Count() - 1
+        target.Push(bytes[i])
+    end for
+end function
+
+function __pb_decimalAdd(a as String, b as String) as String
+    aTrim = __pb_trimLeadingZeros(a)
+    bTrim = __pb_trimLeadingZeros(b)
+    carry = 0
+    result = ""
+    i = Len(aTrim) - 1
+    j = Len(bTrim) - 1
+    while i >= 0 or j >= 0 or carry > 0
+        digitA = 0
+        if i >= 0 then
+            digitA = Asc(Mid(aTrim, i + 1, 1)) - Asc("0")
+        end if
+        digitB = 0
+        if j >= 0 then
+            digitB = Asc(Mid(bTrim, j + 1, 1)) - Asc("0")
+        end if
+        total = digitA + digitB + carry
+        result = Chr((total MOD 10) + Asc("0")) + result
+        carry = __pb_truncate(total / 10)
+        i = i - 1
+        j = j - 1
     end while
-    target.Push(Int(longVal))
+    return __pb_trimLeadingZeros(result)
+end function
+
+function __pb_decimalCompare(a as String, b as String) as Integer
+    aTrim = __pb_trimLeadingZeros(a)
+    bTrim = __pb_trimLeadingZeros(b)
+    lenA = Len(aTrim)
+    lenB = Len(bTrim)
+    if lenA > lenB then return 1
+    if lenA < lenB then return -1
+    for i = 0 to lenA - 1
+        digitA = Asc(Mid(aTrim, i + 1, 1))
+        digitB = Asc(Mid(bTrim, i + 1, 1))
+        if digitA > digitB then return 1
+        if digitA < digitB then return -1
+    end for
+    return 0
+end function
+
+function __pb_decimalSubtract(a as String, b as String) as String
+    if __pb_decimalCompare(a, b) < 0 then return "0"
+    aTrim = __pb_trimLeadingZeros(a)
+    bTrim = __pb_trimLeadingZeros(b)
+    result = ""
+    borrow = 0
+    i = Len(aTrim) - 1
+    j = Len(bTrim) - 1
+    while i >= 0
+        digitA = Asc(Mid(aTrim, i + 1, 1)) - Asc("0") - borrow
+        borrow = 0
+        digitB = 0
+        if j >= 0 then
+            digitB = Asc(Mid(bTrim, j + 1, 1)) - Asc("0")
+        end if
+        digitA = digitA - digitB
+        if digitA < 0 then
+            digitA = digitA + 10
+            borrow = 1
+        end if
+        result = Chr(digitA + Asc("0")) + result
+        i = i - 1
+        j = j - 1
+    end while
+    return __pb_trimLeadingZeros(result)
+end function
+
+function __pb_decimalMultiplyBySmall(value as String, factor as Integer) as String
+    base = __pb_trimLeadingZeros(value)
+    if factor = 0 or base = "0" then return "0"
+    carry = 0
+    result = ""
+    for i = Len(base) - 1 to 0 step -1
+        digit = Asc(Mid(base, i + 1, 1)) - Asc("0")
+        total = digit * factor + carry
+        result = Chr((total MOD 10) + Asc("0")) + result
+        carry = __pb_truncate(total / 10)
+    end for
+    while carry > 0
+        result = Chr((carry MOD 10) + Asc("0")) + result
+        carry = __pb_truncate(carry / 10)
+    end while
+    return __pb_trimLeadingZeros(result)
+end function
+
+function __pb_decimalMultiplyBy128(value as String) as String
+    result = __pb_trimLeadingZeros(value)
+    if result = "0" then return "0"
+    for i = 1 to 7
+        result = __pb_decimalMultiplyBySmall(result, 2)
+    end for
+    return __pb_trimLeadingZeros(result)
+end function
+
+function __pb_toSignedInt64String(unsigned as String) as String
+    if unsigned = invalid then return "0"
+    trimmed = __pb_trimLeadingZeros(unsigned)
+    if trimmed = "0" then return "0"
+    threshold = "9223372036854775807"
+    comparison = __pb_decimalCompare(trimmed, threshold)
+    if comparison <= 0 then return trimmed
+    diff = __pb_decimalSubtract("18446744073709551616", trimmed)
+    if diff = "0" then return "0"
+    return "-" + diff
+end function
+
+function __pb_decodeVarintToDecimalString(bytes as Object) as String
+    result = "0"
+    multiplier = "1"
+    count = bytes.Count()
+    for i = 0 to count - 1
+        byteVal = bytes[i]
+        chunk = byteVal AND &h7F
+        if chunk > 0 then
+            term = __pb_decimalMultiplyBySmall(multiplier, chunk)
+            result = __pb_decimalAdd(result, term)
+        end if
+        if (byteVal AND &h80) = 0 then exit for
+        multiplier = __pb_decimalMultiplyBy128(multiplier)
+    end for
+    return __pb_trimLeadingZeros(result)
 end function
 
 function __pb_appendByteArray(target as Object, source as Object) as Void
@@ -135,18 +417,16 @@ end function
 
 function __pb_readVarint64(bytes as Object, startIndex as Integer) as Object
     result = {}
-    shift = 0
-    value = 0.0
+    chunk = []
     index = startIndex
     count = bytes.Count()
     while index < count
         byte = bytes[index]
-        value = value + ((byte AND &h7F) * (2 ^ shift))
-        shift = shift + 7
+        chunk.Push(byte)
         index = index + 1
         if (byte AND &h80) = 0 then exit while
     end while
-    result.value = __pb_toDecimalString(value)
+    result.value = __pb_decodeVarintToDecimalString(chunk)
     result.nextIndex = index
     return result
 end function
@@ -184,15 +464,12 @@ function __pb_toLong(value as Dynamic) as Double
 end function
 
 function __pb_toDecimalString(value as Double) as String
-    if value = 0 then return "0"
-    digits = ""
-    current = Fix(value)
-    while current > 0
-        remainder = current - 10 * Fix(current / 10)
-        digits = Chr(48 + Int(remainder)) + digits
-        current = Fix(current / 10)
-    end while
-    return digits
+    if value < 0 then
+        positive = __pb_doubleToDecimalString(0 - value)
+        if positive = "0" then return "0"
+        return "-" + positive
+    end if
+    return __pb_doubleToDecimalString(value)
 end function
 
 sub __pb_registerRuntime()
@@ -211,6 +488,8 @@ sub __pb_registerRuntime()
     globalAA.__pb_byteArrayToBase64 = __pb_byteArrayToBase64
     globalAA.__pb_toLong = __pb_toLong
     globalAA.__pb_toDecimalString = __pb_toDecimalString
+    globalAA.__pb_truncate = __pb_truncate
+    globalAA.__pb_toSignedInt64String = __pb_toSignedInt64String
 end sub`;
 }
 
@@ -345,8 +624,6 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
       "            end if",
       "        end if",
       "    end if",
-      "    value = __pb_toLong(value)",
-      "",
       "    bytes = __pb_createByteArray()",
       `    __pb_writeVarint(bytes, ${tag})`,
       "    __pb_writeVarint64(bytes, value)",
@@ -366,7 +643,7 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
       `        if fieldNumber = ${fieldId} and wireType = 0 then`,
       "            valueResult = __pb_readVarint64(bytes, cursor)",
       "            cursor = valueResult.nextIndex",
-      `            message.${fieldName} = valueResult.value`,
+      `            message.${fieldName} = __pb_toSignedInt64String(valueResult.value)`,
       "        else",
       "            exit while",
       "        end if",

@@ -20,15 +20,24 @@ sub Main()
 
     for each testCase in cases
         typeName = testCase.type
+        fieldName = testCase.field
+        valueType = testCase.valueType
+        if Type(valueType) <> "String" and Type(valueType) <> "roString" then
+            valueType = "unknown"
+        end if
+        displayType = LCase(valueType)
+        if Type(fieldName) <> "String" and Type(fieldName) <> "roString" then
+            fieldName = fieldName + ""
+        end if
         sampleLabel = invalid
         if GetInterface(testCase, "ifAssociativeArray") <> invalid then
             sampleLabel = testCase.Lookup("sampleLabel")
         end if
+        labelSuffix = ""
         if sampleLabel <> invalid and sampleLabel <> "" then
-            print "Verifying type: "; typeName; " ["; sampleLabel; "]"
-        else
-            print "Verifying type: "; typeName
+            labelSuffix = " [" + sampleLabel + "]"
         end if
+        print "Verifying "; displayType; " via "; typeName; "."; fieldName; labelSuffix
 
         if handlers = invalid or handlers.DoesExist(typeName) = false then
             print "  Missing handler for type."; typeName
