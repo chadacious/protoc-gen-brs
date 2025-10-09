@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "fs-extra";
 import { loadProtoBundle } from "./protoLoader";
-import { collectSimpleStringMessages } from "./schemaUtils";
+import { collectSimpleScalarMessages, SimpleScalarMessageDescriptor } from "./schemaUtils";
 
 export interface GenerateBrightScriptOptions {
   protoPaths: string[];
@@ -14,7 +14,7 @@ export async function generateBrightScriptArtifacts(options: GenerateBrightScrip
   await fs.ensureDir(resolvedOutput);
 
   const bundle = await loadProtoBundle(options.protoPaths);
-  const simpleMessages = collectSimpleStringMessages(bundle.root);
+  const simpleMessages = collectSimpleScalarMessages(bundle.root);
 
   const messagesDir = path.join(resolvedOutput, "messages");
   await fs.ensureDir(messagesDir);
@@ -33,7 +33,7 @@ export async function generateBrightScriptArtifacts(options: GenerateBrightScrip
     const messagePath = path.join(messagesDir, `${descriptor.type.name}.brs`);
     await fs.writeFile(
       messagePath,
-      renderSimpleStringMessageModule(descriptor.type.name, descriptor.field.name, descriptor.field.id),
+      renderScalarMessageModule(descriptor),
       "utf8"
     );
 
@@ -198,6 +198,183 @@ function renderSimpleStringMessageModule(typeName: string, fieldName: string, fi
   ];
 
   return lines.join("\n");
+}
+
+function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): string {
+  const typeName = descriptor.type.name;
+  const fieldName = descriptor.field.name;
+  const fieldId = descriptor.field.id;
+
+  if (descriptor.scalarType === "string") {
+    const tag = (fieldId << 3) | 2;
+    return [
+      `' Auto-generated encoder/decoder for ${typeName}`,
+      `function ${typeName}Encode(message as Object) as String`,
+      "    value = \"\"",
+      "    if message <> invalid then",
+      "        if GetInterface(message, \"ifAssociativeArray\") <> invalid then",
+      `            existing = message.Lookup(\"${fieldName}\")`,
+      "            if existing <> invalid then",
+      "                value = existing",
+      "            end if",
+      "        else",
+      `            candidate = message.${fieldName}`,
+      "            if candidate <> invalid then",
+      "                value = candidate",
+      "            end if",
+      "        end if",
+      "    end if",
+      "",
+      "    bytes = __pb_createByteArray()",
+      `    __pb_writeVarint(bytes, ${tag})`,
+      "    strBytes = __pb_createByteArray()",
+      "    strBytes.FromAsciiString(value)",
+      "    __pb_writeVarint(bytes, strBytes.Count())",
+      "    __pb_appendByteArray(bytes, strBytes)",
+      "    return __pb_toBase64(bytes)",
+      "end function",
+      "",
+      `function ${typeName}Decode(encoded as String) as Object`,
+      "    bytes = __pb_fromBase64(encoded)",
+      "    cursor = 0",
+      "    limit = bytes.Count()",
+      "    message = {}",
+      "    while cursor < limit",
+      "        tagResult = __pb_readVarint(bytes, cursor)",
+      "        cursor = tagResult.nextIndex",
+      "        fieldNumber = Int(tagResult.value / 8)",
+      "        wireType = tagResult.value AND &h07",
+      `        if fieldNumber = ${fieldId} and wireType = 2 then`,
+      "            lengthResult = __pb_readVarint(bytes, cursor)",
+      "            cursor = lengthResult.nextIndex",
+      "            strLength = lengthResult.value",
+      "            fieldValue = __pb_readString(bytes, cursor, strLength)",
+      "            cursor = cursor + strLength",
+      `            message.${fieldName} = fieldValue`,
+      "        else",
+      "            exit while",
+      "        end if",
+      "    end while",
+      "    return message",
+      "end function",
+      ""
+    ].join("\n");
+  }
+
+  if (descriptor.scalarType === "int32") {
+    const tag = (fieldId << 3) | 0;
+    return [
+      `' Auto-generated encoder/decoder for ${typeName}`,
+      `function ${typeName}Encode(message as Object) as String`,
+      "    value = 0",
+      "    if message <> invalid then",
+      "        if GetInterface(message, \"ifAssociativeArray\") <> invalid then",
+      `            existing = message.Lookup(\"${fieldName}\")`,
+      "            if existing <> invalid then",
+      "                value = existing",
+      "            end if",
+      "        else",
+      `            candidate = message.${fieldName}`,
+      "            if candidate <> invalid then",
+      "                value = candidate",
+      "            end if",
+      "        end if",
+      "    end if",
+      "    value = Int(value)",
+      "",
+      "    bytes = __pb_createByteArray()",
+      `    __pb_writeVarint(bytes, ${tag})`,
+      "    __pb_writeVarint(bytes, value)",
+      "    return __pb_toBase64(bytes)",
+      "end function",
+      "",
+      `function ${typeName}Decode(encoded as String) as Object`,
+      "    bytes = __pb_fromBase64(encoded)",
+      "    cursor = 0",
+      "    limit = bytes.Count()",
+      "    message = {}",
+      "    while cursor < limit",
+      "        tagResult = __pb_readVarint(bytes, cursor)",
+      "        cursor = tagResult.nextIndex",
+      "        fieldNumber = Int(tagResult.value / 8)",
+      "        wireType = tagResult.value AND &h07",
+      `        if fieldNumber = ${fieldId} and wireType = 0 then`,
+      "            valueResult = __pb_readVarint(bytes, cursor)",
+      "            cursor = valueResult.nextIndex",
+      `            message.${fieldName} = valueResult.value`,
+      "        else",
+      "            exit while",
+      "        end if",
+      "    end while",
+      "    return message",
+      "end function",
+      ""
+    ].join("\n");
+  }
+
+  if (descriptor.scalarType === "bool") {
+    const tag = (fieldId << 3) | 0;
+    return [
+      `' Auto-generated encoder/decoder for ${typeName}`,
+      `function ${typeName}Encode(message as Object) as String`,
+      "    value = false",
+      "    if message <> invalid then",
+      "        if GetInterface(message, \"ifAssociativeArray\") <> invalid then",
+      `            existing = message.Lookup(\"${fieldName}\")`,
+      "            if existing <> invalid then",
+      "                value = existing",
+      "            end if",
+      "        else",
+      `            candidate = message.${fieldName}`,
+      "            if candidate <> invalid then",
+      "                value = candidate",
+      "            end if",
+      "        end if",
+      "    end if",
+      "",
+      "    valueType = Type(value)",
+      "    if valueType = \"String\" then",
+      "        lower = LCase(value)",
+      "        value = (lower = \"true\") or (lower = \"1\")",
+      "    else if valueType = \"Boolean\" then",
+      "        ' keep as is",
+      "    else",
+      "        value = (value <> 0)",
+      "    end if",
+      "",
+      "    bytes = __pb_createByteArray()",
+      `    __pb_writeVarint(bytes, ${tag})`,
+      "    boolInt = 0",
+      "    if value = true then boolInt = 1",
+      "    __pb_writeVarint(bytes, boolInt)",
+      "    return __pb_toBase64(bytes)",
+      "end function",
+      "",
+      `function ${typeName}Decode(encoded as String) as Object`,
+      "    bytes = __pb_fromBase64(encoded)",
+      "    cursor = 0",
+      "    limit = bytes.Count()",
+      "    message = {}",
+      "    while cursor < limit",
+      "        tagResult = __pb_readVarint(bytes, cursor)",
+      "        cursor = tagResult.nextIndex",
+      "        fieldNumber = Int(tagResult.value / 8)",
+      "        wireType = tagResult.value AND &h07",
+      `        if fieldNumber = ${fieldId} and wireType = 0 then`,
+      "            valueResult = __pb_readVarint(bytes, cursor)",
+      "            cursor = valueResult.nextIndex",
+      `            message.${fieldName} = (valueResult.value <> 0)`,
+      "        else",
+      "            exit while",
+      "        end if",
+      "    end while",
+      "    return message",
+      "end function",
+      ""
+    ].join("\n");
+  }
+
+  throw new Error(`Unsupported scalar type: ${descriptor.scalarType}`);
 }
 
 function renderReadme(protoFiles: string[], messageNames: string[]): string {

@@ -3,7 +3,7 @@
 Prototype workspace for generating BrightScript encode/decode modules from Protocol Buffers definitions. The current slice already:
 
 - Parses `.proto` files (starting with `proto/simple.proto`).
-- Emits BrightScript runtime helpers and message-specific encoders/decoders into `generated/source/`.
+- Emits BrightScript runtime helpers and message-specific encoders/decoders (currently supporting `string` and `int32`) into `roku-app/source/generated/`.
 - Produces JavaScript baseline vectors (JSON + BrightScript data) using `protobufjs` for parity checks.
 - Loads the generated code and baseline data inside a Roku harness (`roku-app/source/main.brs`) to compare results.
 
@@ -29,8 +29,8 @@ npm install
 - `npm run build` – Compile the TypeScript CLI into `dist/`.
 - `npm run build:roku` – Invoke BrighterScript (`bsc`) to compile the Roku app sources (Node ≤ 22 recommended until `roku-deploy` updates its dependencies).
 - `npm run package:roku` – Create `out/channel.zip` using `roku-deploy` (zips `out/` without contacting a device).
-- `npm run generate:brs -- --proto <paths>` – Load `.proto` inputs and emit BrightScript encoders/decoders plus registry files into `generated/source/`.
-- `npm run generate:baseline -- --proto <paths>` – Render JSON baseline vectors into `fixtures/baseline/` and mirror them into `generated/source/__baselineData.brs` for the Roku harness.
+- `npm run generate:brs -- --proto <paths>` – Load `.proto` inputs and emit BrightScript encoders/decoders plus registry files into `roku-app/source/generated/`.
+- `npm run generate:baseline -- --proto <paths>` – Render JSON baseline vectors into `fixtures/baseline/` and mirror them into `roku-app/source/generated/__baselineData.brs` for the Roku harness.
 - `npm run clean` – Remove build artifacts and generated fixtures.
 
 > Tip: use directories like `proto/` or individual `.proto` files with `--proto`. Multiple values are allowed.
@@ -62,7 +62,7 @@ The Roku app prints per-case comparisons plus a summary tally. The scaffold curr
 
 ## Next Steps
 
-1. Broaden generator coverage (numeric types, bytes, repeated fields, nested messages, enums).
+1. Broaden generator coverage (additional numeric types, bytes, repeated fields, nested messages, enums).
 2. Allow configurable fixtures (custom values, multiple cases per message, failure scenarios).
 3. Automate Roku deployment/execution (roku-deploy integration, on-device reporting).
 4. Add automated testing (TypeScript unit coverage + BrightScript simulation tests).

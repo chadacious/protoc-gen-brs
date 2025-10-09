@@ -29,20 +29,26 @@ sub Main()
             expectedEncoded = testCase.encodedBase64
             expectedValue = testCase.decoded[testCase.field]
 
-            actualEncoded = handler.encode(testCase.decoded)
-            decodedResult = handler.decode(expectedEncoded)
+        actualEncoded = handler.encode(testCase.decoded)
+        decodedResult = handler.decode(expectedEncoded)
 
-            decodedValue = invalid
-            if decodedResult <> invalid then
-                if GetInterface(decodedResult, "ifAssociativeArray") <> invalid then
-                    decodedValue = decodedResult.Lookup(testCase.field)
+        print "    baseline encode: " + expectedEncoded
+        print "    runtime encode:  " + actualEncoded
+
+        decodedValue = invalid
+        if decodedResult <> invalid then
+            if GetInterface(decodedResult, "ifAssociativeArray") <> invalid then
+                decodedValue = decodedResult.Lookup(testCase.field)
                 else
                     decodedValue = decodedResult[testCase.field]
                 end if
             end if
 
-            encodeMatch = actualEncoded = expectedEncoded
-            decodeMatch = decodedValue = expectedValue
+        print "    baseline value:  "; expectedValue
+        print "    runtime value:   "; decodedValue
+
+        encodeMatch = actualEncoded = expectedEncoded
+        decodeMatch = decodedValue = expectedValue
 
             if encodeMatch and decodeMatch then
                 print "  OK"

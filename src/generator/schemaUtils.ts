@@ -1,11 +1,16 @@
 import { Namespace, Root, Type, Field } from "protobufjs";
 
-export interface SimpleStringMessageDescriptor {
+export type SupportedScalarType = "string" | "int32" | "bool" | "bytes";
+
+export interface SimpleScalarMessageDescriptor {
   type: Type;
   field: Field;
+  scalarType: SupportedScalarType;
 }
 
-export function collectSimpleStringMessages(root: Root): SimpleStringMessageDescriptor[] {
+const SUPPORTED_SCALAR_TYPES: SupportedScalarType[] = ["string", "int32", "bool", "bytes"];
+
+export function collectSimpleScalarMessages(root: Root): SimpleScalarMessageDescriptor[] {
   const messages = collectTypes(root);
   return messages
     .map((type) => {
@@ -14,12 +19,16 @@ export function collectSimpleStringMessages(root: Root): SimpleStringMessageDesc
         return undefined;
       }
       const field = fields[0];
-      if (field.type !== "string") {
+      if (!isSupportedScalarField(field)) {
         return undefined;
       }
-      return { type, field };
+      return {
+        type,
+        field,
+        scalarType: field.type as SupportedScalarType
+      };
     })
-    .filter((descriptor): descriptor is SimpleStringMessageDescriptor => Boolean(descriptor));
+    .filter((descriptor): descriptor is SimpleScalarMessageDescriptor => Boolean(descriptor));
 }
 
 function collectTypes(namespace: Namespace | Root): Type[] {
@@ -35,4 +44,8 @@ function collectTypes(namespace: Namespace | Root): Type[] {
   }
 
   return results;
+}
+
+function isSupportedScalarField(field: Field): boolean {
+  return SUPPORTED_SCALAR_TYPES.includes(field.type as SupportedScalarType);
 }

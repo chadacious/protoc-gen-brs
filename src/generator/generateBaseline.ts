@@ -2,7 +2,7 @@ import path from "node:path";
 import { Buffer } from "node:buffer";
 import fs from "fs-extra";
 import { loadProtoBundle } from "./protoLoader";
-import { collectSimpleStringMessages } from "./schemaUtils";
+import { collectSimpleScalarMessages } from "./schemaUtils";
 
 export interface GenerateBaselineOptions {
   protoPaths: string[];
@@ -14,10 +14,18 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
   await fs.ensureDir(outputDir);
 
   const bundle = await loadProtoBundle(options.protoPaths);
-  const simpleMessages = collectSimpleStringMessages(bundle.root);
+  const simpleMessages = collectSimpleScalarMessages(bundle.root);
 
   const cases = simpleMessages.map((descriptor) => {
-    const sampleValue = `Hello from ${descriptor.type.name}`;
+    let sampleValue: string | number | boolean;
+    if (descriptor.scalarType === "string") {
+      sampleValue = `Hello from ${descriptor.type.name}`;
+    } else if (descriptor.scalarType === "int32") {
+      sampleValue = descriptor.field.id * 100 + 7;
+    } else {
+      sampleValue = descriptor.field.id % 2 === 1;
+    }
+
     const payload = {
       [descriptor.field.name]: sampleValue
     };
@@ -31,6 +39,7 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
       field: descriptor.field.name,
       fieldId: descriptor.field.id,
       value: sampleValue,
+      valueType: descriptor.scalarType,
       encodedBase64,
       decoded
     };
@@ -45,9 +54,9 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
 
   await fs.writeJson(metadataPath, metadata, { spaces: 2 });
 
-  const workspaceGeneratedDir = path.resolve("generated/source");
-  await fs.ensureDir(workspaceGeneratedDir);
-  const baselineBrightScriptPath = path.join(workspaceGeneratedDir, "__baselineData.brs");
+  const embeddedDir = path.resolve("roku-app/source/generated");
+  await fs.ensureDir(embeddedDir);
+  const baselineBrightScriptPath = path.join(embeddedDir, "__baselineData.brs");
   await fs.writeFile(baselineBrightScriptPath, renderBaselineBrightScript(metadata), "utf8");
 }
 
@@ -59,7 +68,8 @@ interface BaselineDocument {
     protoType: string;
     field: string;
     fieldId: number;
-    value: string;
+    value: string | number | boolean;
+    valueType: string;
     encodedBase64: string;
     decoded: Record<string, unknown>;
   }>;
@@ -87,12 +97,13 @@ function renderBaselineBrightScript(document: BaselineDocument): string {
     lines.push(`    ${caseIdentifier}.protoType = "${escapeBrsString(testCase.protoType)}"`);
     lines.push(`    ${caseIdentifier}.field = "${escapeBrsString(testCase.field)}"`);
     lines.push(`    ${caseIdentifier}.fieldId = ${testCase.fieldId}`);
-    lines.push(`    ${caseIdentifier}.value = "${escapeBrsString(testCase.value)}"`);
+    lines.push(`    ${caseIdentifier}.valueType = "${escapeBrsString(testCase.valueType)}"`);
+    lines.push(`    ${caseIdentifier}.value = ${formatBrsValue(testCase.value)}`);
     lines.push(`    ${caseIdentifier}.encodedBase64 = "${testCase.encodedBase64}"`);
     lines.push(`    ${caseIdentifier}.decoded = {}`);
 
     Object.entries(testCase.decoded).forEach(([key, rawValue]) => {
-      lines.push(`    ${caseIdentifier}.decoded.${key} = "${escapeBrsString(String(rawValue))}"`);
+      lines.push(`    ${caseIdentifier}.decoded.${key} = ${formatBrsValue(rawValue)}`);
     });
 
     lines.push(`    data.cases.Push(${caseIdentifier})`);
@@ -105,4 +116,14 @@ function renderBaselineBrightScript(document: BaselineDocument): string {
 
 function escapeBrsString(value: string): string {
   return value.replace(/\"/g, "\"\"");
+}
+
+function formatBrsValue(value: unknown): string {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (typeof value === "number") {
+    return value.toString();
+  }
+  return `"${escapeBrsString(String(value))}"`;
 }

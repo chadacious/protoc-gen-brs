@@ -5,3 +5,15 @@ package samples;
 message SimpleMessage {
   string value = 1;
 }
+
+message CountMessage {
+  int32 count = 1;
+}
+
+message FlagMessage {
+  bool enabled = 1;
+}
+
+message BytesMessage {
+  bytes data = 1;
+}
