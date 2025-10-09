@@ -17,6 +17,8 @@ sub Main()
 
     total = cases.Count()
     passed = 0
+    runTimer = CreateObject("roTimespan")
+    runTimer.Mark()
 
     for each testCase in cases
         typeName = testCase.type
@@ -29,6 +31,9 @@ sub Main()
         if Type(fieldName) <> "String" and Type(fieldName) <> "roString" then
             fieldName = fieldName + ""
         end if
+        caseTimer = CreateObject("roTimespan")
+        caseTimer.Mark()
+
         sampleLabel = invalid
         if GetInterface(testCase, "ifAssociativeArray") <> invalid then
             sampleLabel = testCase.Lookup("sampleLabel")
@@ -79,9 +84,12 @@ sub Main()
             LogMismatchDetails(testCase, expectedEncoded, actualEncoded, testCase.decoded, decodedResult)
         end if
         end if
+
+        print "  duration:  "; caseTimer.TotalMilliseconds(); " ms"
     end for
 
     print "Summary: "; passed; " of "; total; " cases passed."
+    print "Total duration: "; runTimer.TotalMilliseconds(); " ms"
 end sub
 
 sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEncoded as String, baselineDecoded as Object, runtimeDecoded as Object)
