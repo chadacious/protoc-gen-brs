@@ -195,17 +195,79 @@ function __pb_decimalDivMod(value as String, divisor as Integer) as Object
     return result
 end function
 
+function __pb_decimalStringToDigits(value as String) as Object
+    digits = CreateObject("roByteArray")
+    length = Len(value)
+    for i = 0 to length - 1
+        digits.Push(Asc(Mid(value, i + 1, 1)) - Asc("0"))
+    end for
+    return __pb_trimDigitArray(digits)
+end function
+
+function __pb_trimDigitArray(digits as Object) as Object
+    trimmed = CreateObject("roByteArray")
+    if digits = invalid then
+        trimmed.Push(0)
+        return trimmed
+    end if
+    count = digits.Count()
+    index = 0
+    while index < count and digits[index] = 0
+        index = index + 1
+    end while
+    if index >= count then
+        trimmed.Push(0)
+        return trimmed
+    end if
+    for i = index to count - 1
+        trimmed.Push(digits[i])
+    end for
+    return trimmed
+end function
+
+function __pb_digitsIsZero(digits as Object) as Boolean
+    if digits = invalid then return true
+    count = digits.Count()
+    for i = 0 to count - 1
+        if digits[i] <> 0 then return false
+    end for
+    return true
+end function
+
+function __pb_digitsDivMod128(digits as Object) as Object
+    result = {}
+    quotient = CreateObject("roByteArray")
+    remainder = 0
+    count = digits.Count()
+    for i = 0 to count - 1
+        remainder = remainder * 10 + digits[i]
+        qdigit = __pb_truncate(remainder / 128)
+        if quotient.Count() > 0 or qdigit <> 0 then
+            quotient.Push(qdigit)
+        end if
+        remainder = remainder - qdigit * 128
+    end for
+    if quotient.Count() = 0 then quotient.Push(0)
+    result.digits = quotient
+    result.remainder = __pb_truncate(remainder)
+    return result
+end function
+
 function __pb_buildVarintFromDecimal(value as String) as Object
     bytes = []
     if value = "0" then
         bytes.Push(0)
         return bytes
     end if
-    current = value
-    while current <> "0"
-        parts = __pb_decimalDivMod(current, 128)
+    digits = __pb_trimDigitArray(__pb_decimalStringToDigits(value))
+    if __pb_digitsIsZero(digits) then
+        bytes.Push(0)
+        return bytes
+    end if
+    while not __pb_digitsIsZero(digits)
+        parts = __pb_digitsDivMod128(digits)
         bytes.Push(__pb_truncate(parts.remainder))
-        current = parts.quotient
+        digits = __pb_trimDigitArray(parts.digits)
     end while
     count = bytes.Count()
     for i = 0 to count - 2

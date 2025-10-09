@@ -17,6 +17,8 @@ sub Main()
 
     total = cases.Count()
     passed = 0
+    runTimer = CreateObject("roTimespan")
+    runTimer.Mark()
 
     for each testCase in cases
         typeName = testCase.type
@@ -87,6 +89,7 @@ sub Main()
     end for
 
     print "Summary: "; passed; " of "; total; " cases passed."
+    print "Total duration: "; runTimer.TotalMilliseconds(); " ms"
 end sub
 
 sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEncoded as String, baselineDecoded as Object, runtimeDecoded as Object)
