@@ -29,6 +29,8 @@ sub Main()
         if Type(fieldName) <> "String" and Type(fieldName) <> "roString" then
             fieldName = fieldName + ""
         end if
+        caseTimer = CreateObject("roTimespan")
+        caseTimer.Mark()
         sampleLabel = invalid
         if GetInterface(testCase, "ifAssociativeArray") <> invalid then
             sampleLabel = testCase.Lookup("sampleLabel")
@@ -79,6 +81,9 @@ sub Main()
             LogMismatchDetails(testCase, expectedEncoded, actualEncoded, testCase.decoded, decodedResult)
         end if
         end if
+
+        elapsedMs = caseTimer.TotalMilliseconds()
+        print "  duration: "; elapsedMs; " ms"
     end for
 
     print "Summary: "; passed; " of "; total; " cases passed."
