@@ -1,0 +1,15 @@
+{
+  "project": "protoc-gen-brs",
+  "rootDir": ".",
+  "files": [
+    "roku-app/manifest",
+    "roku-app/source/**/*",
+    "roku-app/components/**/*",
+    "generated/source/**/*",
+    "roku-app/source/generated/**/*"
+  ],
+  "stagingDir": "out",
+  "createPackage": false,
+  "autoImportComponentScript": true,
+  "sourceMap": true
+}

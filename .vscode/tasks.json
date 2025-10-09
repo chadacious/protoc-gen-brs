@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build:roku",
+      "type": "npm",
+      "script": "build:roku",
+      "path": ".",
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "name": "protoc-gen-brs",
+  "version": "1.0.0",
+  "description": "BrightScript code generator and test harness for protobuf definitions.",
+  "main": "dist/cli.js",
+  "bin": {
+    "protoc-gen-brs": "dist/cli.js"
+  },
+  "scripts": {
+    "clean": "rimraf dist out generated/source fixtures/baseline",
+    "build": "tsc --project tsconfig.json",
+    "build:roku": "bsc --project bsconfig.json && node scripts/postBuildRoku.mjs",
+    "package:roku": "node scripts/packageChannel.mjs",
+    "generate:brs": "ts-node --project tsconfig.json src/cli.ts generate",
+    "generate:baseline": "ts-node --project tsconfig.json src/cli.ts baseline",
+    "dev": "ts-node --project tsconfig.json src/cli.ts --help",
+    "lint": "echo \"TODO: add linting\"",
+    "test": "echo \"TODO: add integration tests\""
+  },
+  "keywords": [
+    "roku",
+    "brightscript",
+    "protobuf"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "bsconfig.json",
+    "proto",
+    "generated",
+    "fixtures",
+    "roku-app"
+  ],
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^24.7.0",
+    "@types/yargs": "^17.0.33",
+    "brighterscript": "^0.70.1",
+    "rimraf": "^6.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "fs-extra": "^11.3.2",
+    "protobufjs": "^7.5.4",
+    "yargs": "^17.7.2"
+  }
+}

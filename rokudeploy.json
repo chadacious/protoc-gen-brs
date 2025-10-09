@@ -1,0 +1,14 @@
+{
+  "rootDir": "out",
+  "files": [
+    "manifest",
+    "source/**/*",
+    "components/**/*",
+    "generated/source/**/*"
+  ],
+  "host": "192.168.119.156",
+  "password": "abcd",
+  "retainStagingDir": false,
+  "remotePort": 8060,
+  "debugPort": 8085
+}

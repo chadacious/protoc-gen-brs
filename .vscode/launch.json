@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Roku: Build and Side Load",
+      "type": "brightscript",
+      "request": "launch",
+      "host": "192.168.119.156",
+      "password": "abcd",
+      "rootDir": "${workspaceFolder}/out",
+      "outDir": "${workspaceFolder}/out",
+      "stopOnEntry": false,
+      "preLaunchTask": "build:roku",
+      "injectRdbOnDeviceComponent": false,
+      "enableDebuggerAutoRecovery": false,
+      "rendezvousTracking": false,
+      "enableDebugProtocol": true,
+      "fileLogging": false,
+      "stopDebuggerOnAppExit": true,
+      "files": [
+        "manifest",
+        "source/**/*",
+        "components/**/*",
+        "generated/source/**/*"
+      ]
+    }
+  ]
+}
