@@ -45,7 +45,7 @@ async function run() {
   const { int32File, uint32File, uint64File, sint32File, sint64File } = await generateBrightScript(protoPath, outputDir);
 
   assert.ok(int32File.includes("__pb_writeVarint(bytes, 8)"), "int32 encode should emit field tag");
-  assert.ok(int32File.includes("message.value = __pb_toSigned32(valueResult.value)"), "int32 decode should use signed helper");
+  assert.ok(int32File.includes("message.value = __pb_toSigned32FromString(valueResult.value)"), "int32 decode should use signed helper");
   assert.ok(uint32File.includes("__pb_writeVarint(bytes, 8)"), "uint32 encode should emit field tag");
   assert.ok(uint32File.includes("__pb_writeVarint64(bytes, value)"), "uint32 encode should use 64-bit writer to avoid Int overflow");
   assert.ok(uint32File.includes("message.value = __pb_toUnsigned32(valueResult.value)"), "uint32 decode should coerce to unsigned");

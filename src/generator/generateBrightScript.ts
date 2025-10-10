@@ -294,16 +294,16 @@ function __pb_encodeZigZag32(value as Integer) as String
     return __pb_trimLeadingZeros(__pb_decimalSubtract(doubled, "1"))
 end function
 
-function __pb_decodeZigZag32(value as Dynamic) as Double
+function __pb_decodeZigZag32(value as String) as Double
     if value = invalid then return 0
-    unsignedStr = __pb_doubleToDecimalString(__pb_toUnsigned32(value))
+    unsignedStr = __pb_trimLeadingZeros(value)
     parts = __pb_decimalDivMod(unsignedStr, 2)
     quotient = __pb_trimLeadingZeros(parts.quotient)
     if parts.remainder = 0 then
-        return __pb_toLong(quotient)
+        return __pb_parseDecimalToDouble(quotient)
     end if
     negMag = __pb_decimalAdd(quotient, "1")
-    return 0 - __pb_toLong(negMag)
+    return 0 - __pb_parseDecimalToDouble(negMag)
 end function
 
 function __pb_toUnsigned32(value as Dynamic) as Double
@@ -322,6 +322,39 @@ function __pb_toSigned32(value as Dynamic) as Double
         result = result - 4294967296#
     end if
     return result
+end function
+
+function __pb_toSigned32FromString(value as String) as Double
+    trimmed = __pb_trimLeadingZeros(value)
+    if trimmed = "0" then return 0
+    if __pb_decimalCompare(trimmed, "2147483647") <= 0 then
+        return __pb_parseDecimalToDouble(trimmed)
+    end if
+    magnitude = __pb_decimalSubtract("4294967296", trimmed)
+    return 0 - __pb_parseDecimalToDouble(magnitude)
+end function
+
+function __pb_parseDecimalToDouble(value as String) as Double
+    if value = invalid then return 0
+    str = value.Trim()
+    if str = "" then return 0
+    sign = 1.0
+    if Left(str, 1) = "-" then
+        sign = -1.0
+        str = Mid(str, 2)
+    else if Left(str, 1) = "+" then
+        str = Mid(str, 2)
+    end if
+    digitsStr = __pb_trimLeadingZeros(str)
+    if digitsStr = "0" then return 0
+    result = 0.0
+    length = Len(digitsStr)
+    for i = 0 to length - 1
+        digitChar = Mid(digitsStr, i + 1, 1)
+        digitVal = Asc(digitChar) - Asc("0")
+        result = result * 10 + digitVal
+    end for
+    return sign * result
 end function
 
 function __pb_encodeZigZag64(value as Dynamic) as String
@@ -631,6 +664,8 @@ sub __pb_registerRuntime()
     globalAA.__pb_decodeZigZag64 = __pb_decodeZigZag64
     globalAA.__pb_toUnsigned32 = __pb_toUnsigned32
     globalAA.__pb_toSigned32 = __pb_toSigned32
+    globalAA.__pb_toSigned32FromString = __pb_toSigned32FromString
+    globalAA.__pb_parseDecimalToDouble = __pb_parseDecimalToDouble
 end sub`;
 
   return base;
@@ -736,9 +771,9 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
       "        fieldNumber = Int(tagResult.value / 8)",
       "        wireType = tagResult.value AND &h07",
       `        if fieldNumber = ${fieldId} and wireType = 0 then`,
-      "            valueResult = __pb_readVarint(bytes, cursor)",
+      "            valueResult = __pb_readVarint64(bytes, cursor)",
       "            cursor = valueResult.nextIndex",
-      `            message.${fieldName} = __pb_toSigned32(valueResult.value)`,
+      `            message.${fieldName} = __pb_toSigned32FromString(valueResult.value)`,
       "        else",
       "            exit while",
       "        end if",
@@ -788,7 +823,7 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
       "        fieldNumber = Int(tagResult.value / 8)",
       "        wireType = tagResult.value AND &h07",
       `        if fieldNumber = ${fieldId} and wireType = 0 then`,
-      "            valueResult = __pb_readVarint(bytes, cursor)",
+      "            valueResult = __pb_readVarint64(bytes, cursor)",
       "            cursor = valueResult.nextIndex",
       `            message.${fieldName} = __pb_decodeZigZag32(valueResult.value)`,
       "        else",
