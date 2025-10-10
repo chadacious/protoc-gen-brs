@@ -18,6 +18,10 @@ async function createProto(tempDir: string) {
     message Sint32Message { sint32 value = 1; }
     message Sint64Message { sint64 value = 1; }
     message FloatMessage { float value = 1; }
+    message PackedInt32Message { repeated int32 values = 1; }
+    message PackedUint32Message { repeated uint32 values = 1; }
+    message PackedBoolMessage { repeated bool values = 1; }
+    message PackedFloatMessage { repeated float values = 1; }
   `;
   await fs.writeFile(protoPath, protoContents.trim() + "\n", "utf8");
   return protoPath;
@@ -36,7 +40,11 @@ async function generateBrightScript(protoPath: string, outputDir: string) {
     uint64File: await readMessage("Uint64Message"),
     sint32File: await readMessage("Sint32Message"),
     sint64File: await readMessage("Sint64Message"),
-    floatFile: await readMessage("FloatMessage")
+    floatFile: await readMessage("FloatMessage"),
+    packedInt32File: await readMessage("PackedInt32Message"),
+    packedUint32File: await readMessage("PackedUint32Message"),
+    packedBoolFile: await readMessage("PackedBoolMessage"),
+    packedFloatFile: await readMessage("PackedFloatMessage")
   };
 }
 
@@ -44,7 +52,18 @@ async function run() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "brs-uint-"));
   const protoPath = await createProto(tempRoot);
   const outputDir = path.join(tempRoot, "generated");
-  const { int32File, uint32File, uint64File, sint32File, sint64File, floatFile } = await generateBrightScript(protoPath, outputDir);
+  const {
+    int32File,
+    uint32File,
+    uint64File,
+    sint32File,
+    sint64File,
+    floatFile,
+    packedInt32File,
+    packedUint32File,
+    packedBoolFile,
+    packedFloatFile
+  } = await generateBrightScript(protoPath, outputDir);
 
   assert.ok(int32File.includes("__pb_writeVarint(bytes, 8)"), "int32 encode should emit field tag");
   assert.ok(int32File.includes("message.value = __pb_toSigned32FromString(valueResult.value)"), "int32 decode should use signed helper");
@@ -74,7 +93,22 @@ async function run() {
   assert.ok(floatFile.includes("floatResult = __pb_readFloat32(bytes, cursor)"), "float decode should read fixed32 chunk");
   assert.ok(floatFile.includes("message.value = floatResult.value"), "float decode should assign decoded float");
 
-  console.log("uint32/uint64/sint32/sint64 generator tests passed.");
+  assert.ok(packedInt32File.includes("__pb_writeVarint(bytes, 10)"), "packed int32 encode should emit length-delimited tag");
+  assert.ok(packedInt32File.includes("__pb_writeVarint(packed, normalized)"), "packed int32 encode should pack values");
+  assert.ok(packedInt32File.includes("else if wireType = 2 then"), "packed int32 decode should handle packed wire type");
+  assert.ok(packedInt32File.includes("values.Push(__pb_toSigned32FromString"), "packed int32 decode should convert varints");
+
+  assert.ok(packedUint32File.includes("__pb_writeVarint(bytes, 10)"), "packed uint32 encode should emit packed tag");
+  assert.ok(packedUint32File.includes("values.Push(__pb_toUnsigned32"), "packed uint32 decode should convert to unsigned");
+
+  assert.ok(packedBoolFile.includes("normalizeBool"), "packed bool encode should normalize inputs");
+  assert.ok(packedBoolFile.includes("values.Push(valueResult.value <> 0)"), "packed bool decode should coerce to boolean");
+
+  assert.ok(packedFloatFile.includes("__pb_writeFloat32(packed"), "packed float encode should write float values");
+  assert.ok(packedFloatFile.includes("else if wireType = 2 then"), "packed float decode should handle packed form");
+  assert.ok(packedFloatFile.includes("values.Push(valueResult.value)"), "packed float decode should push unpacked values");
+
+  console.log("scalar generator tests passed.");
 }
 
 run().catch((error) => {

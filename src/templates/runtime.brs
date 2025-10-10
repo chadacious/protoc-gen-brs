@@ -14,8 +14,9 @@ function __pb_writeVarint(target as Object, value as Dynamic) as Void
     if value = invalid then return
     v = __pb_truncate(value)
     if v < 0 then
-        unsigned32 = 4294967296# + v
-        __pb_writeVarint64(target, unsigned32)
+        magnitude = __pb_doubleToDecimalString(0 - v)
+        unsignedStr = __pb_decimalSubtract("18446744073709551616", magnitude)
+        __pb_writeVarint64(target, unsignedStr)
         return
     end if
     decimalValue = __pb_doubleToDecimalString(v)
@@ -256,6 +257,14 @@ end function
 function __pb_toSigned32FromString(value as String) as Double
     trimmed = __pb_trimLeadingZeros(value)
     if trimmed = "0" then return 0
+    if __pb_decimalCompare(trimmed, "4294967295") > 0 then
+        if __pb_decimalCompare(trimmed, "18446744069414584320") >= 0 then
+            trimmed = __pb_decimalSubtract(trimmed, "18446744069414584320")
+        else
+            trimmed = __pb_decimalSubtract(trimmed, "4294967296")
+        end if
+        trimmed = __pb_trimLeadingZeros(trimmed)
+    end if
     if __pb_decimalCompare(trimmed, "2147483647") <= 0 then
         return __pb_parseDecimalToDouble(trimmed)
     end if
@@ -707,4 +716,3 @@ sub __pb_registerRuntime()
     globalAA.__pb_floatToUint32 = __pb_floatToUint32
     globalAA.__pb_uint32ToFloat = __pb_uint32ToFloat
 end sub
-

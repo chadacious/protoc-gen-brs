@@ -1,8 +1,35 @@
 import path from "node:path";
 import { Buffer } from "node:buffer";
 import fs from "fs-extra";
+import { Writer } from "protobufjs";
 import { loadProtoBundle } from "./protoLoader";
-import { collectSimpleScalarMessages, SimpleScalarMessageDescriptor } from "./schemaUtils";
+import { collectSimpleScalarMessages, SimpleScalarMessageDescriptor, SupportedScalarType } from "./schemaUtils";
+
+const PACKABLE_SCALAR_TYPES = new Set<SupportedScalarType>([
+  "int32",
+  "uint32",
+  "sint32",
+  "int64",
+  "uint64",
+  "sint64",
+  "bool",
+  "float"
+]);
+
+const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
+  string: 2,
+  int32: 0,
+  uint32: 0,
+  sint32: 0,
+  int64: 0,
+  uint64: 0,
+  sint64: 0,
+  bool: 0,
+  bytes: 2,
+  float: 5
+};
+
+type SampleValue = string | number | boolean | Array<string | number | boolean>;
 
 export interface GenerateBaselineOptions {
   protoPaths: string[];
@@ -20,24 +47,18 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
 
   for (const descriptor of simpleMessages) {
     for (const sample of buildSamples(descriptor)) {
-      const payloadValue = (() => {
-        if (descriptor.scalarType === "bytes") {
-          return Buffer.from(sample.value as string, "base64");
-        }
-        if (descriptor.scalarType === "int64") {
-          return sample.value;
-        }
-        return sample.value;
-      })();
-
+      const payloadValue = normalizePayloadValue(descriptor, sample.value);
       const payload = {
         [descriptor.field.name]: payloadValue
       };
+
       const encodedBuffer = descriptor.type.encode(payload).finish();
       const encodedBase64 = Buffer.from(encodedBuffer).toString("base64");
-      const decoded = descriptor.type.toObject(descriptor.type.decode(encodedBuffer), { defaults: true, longs: String, bytes: String });
+      const decodedMessage = descriptor.type.decode(encodedBuffer);
+      const decoded = descriptor.type.toObject(decodedMessage, { defaults: true, longs: String, bytes: String });
+      const alternateEncodings = buildAlternateEncodings(descriptor, sample.value);
 
-      cases.push({
+      const baselineCase: BaselineCase = {
         type: descriptor.type.name,
         protoType: descriptor.type.fullName.replace(/^\./, ""),
         field: descriptor.field.name,
@@ -47,7 +68,13 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
         sampleLabel: sample.label,
         encodedBase64,
         decoded
-      });
+      };
+
+      if (alternateEncodings.length > 0) {
+        baselineCase.alternateEncodings = alternateEncodings;
+      }
+
+      cases.push(baselineCase);
     }
   }
   const metadataPath = path.join(outputDir, "baseline.json");
@@ -70,11 +97,12 @@ interface BaselineCase {
   protoType: string;
   field: string;
   fieldId: number;
-  value: string | number | boolean;
+  value: SampleValue;
   valueType: string;
   sampleLabel: string;
   encodedBase64: string;
   decoded: Record<string, unknown>;
+  alternateEncodings?: string[];
 }
 
 interface BaselineDocument {
@@ -115,6 +143,10 @@ function renderBaselineBrightScript(document: BaselineDocument): string {
       lines.push(`    ${caseIdentifier}.decoded.${key} = ${formatBrsValue(rawValue)}`);
     });
 
+    if (Array.isArray(testCase.alternateEncodings) && testCase.alternateEncodings.length > 0) {
+      lines.push(`    ${caseIdentifier}.alternateEncodings = ${formatBrsValue(testCase.alternateEncodings)}`);
+    }
+
     lines.push(`    data.cases.Push(${caseIdentifier})`);
   });
 
@@ -124,7 +156,11 @@ function renderBaselineBrightScript(document: BaselineDocument): string {
 }
 
 
-function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: string | number | boolean; label: string }> {
+function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: SampleValue; label: string }> {
+  if (descriptor.isRepeated) {
+    return buildRepeatedSamples(descriptor);
+  }
+
   switch (descriptor.scalarType) {
     case "string":
       return [{ value: `Hello from ${descriptor.type.name}`, label: "default" }];
@@ -176,6 +212,33 @@ function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value:
         { value: "", label: "empty" },
         { value: Buffer.from([descriptor.field.id, descriptor.field.id + 1, descriptor.field.id + 2]).toString("base64"), label: "pattern" }
       ];
+  }
+}
+
+function buildRepeatedSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: SampleValue; label: string }> {
+  switch (descriptor.scalarType) {
+    case "int32":
+      return [{ value: [0, descriptor.field.id * 3, -descriptor.field.id * 3], label: "packed" }];
+    case "uint32":
+      return [{ value: [0, descriptor.field.id * 10 + 5, 4294967295], label: "packed" }];
+    case "sint32":
+      return [{ value: [0, descriptor.field.id * 4, -descriptor.field.id * 4], label: "packed" }];
+    case "int64":
+      return [{ value: ["0", String(descriptor.field.id * 100000 + 7), "-123456789"], label: "packed" }];
+    case "uint64":
+      return [{ value: ["0", "4294967296", "9007199254740991"], label: "packed" }];
+    case "sint64":
+      return [{ value: ["0", "2147483647", "-2147483648"], label: "packed" }];
+    case "bool":
+      return [{ value: [false, true, true], label: "packed" }];
+    case "float":
+      return [{ value: [0, 1.25, -2.5], label: "packed" }];
+    case "string":
+      return [{ value: [`Sample-${descriptor.type.name}-a`, `Sample-${descriptor.type.name}-b`], label: "multi" }];
+    case "bytes":
+      return [{ value: ["", Buffer.from([descriptor.field.id, descriptor.field.id + 1]).toString("base64")], label: "multi" }];
+    default:
+      return [{ value: [], label: "empty" }];
   }
 }
 
@@ -256,6 +319,112 @@ function buildUint64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ 
   return samples;
 }
 
+function normalizePayloadValue(descriptor: SimpleScalarMessageDescriptor, sampleValue: SampleValue): unknown {
+  if (descriptor.isRepeated) {
+    const arrayValues = Array.isArray(sampleValue) ? sampleValue : [sampleValue];
+    switch (descriptor.scalarType) {
+      case "bytes":
+        return arrayValues.map((item) => Buffer.from(String(item), "base64"));
+      case "int64":
+      case "uint64":
+      case "sint64":
+        return arrayValues.map((item) => String(item));
+      case "int32":
+      case "uint32":
+      case "sint32":
+      case "float":
+        return arrayValues.map((item) => Number(item));
+      case "bool":
+        return arrayValues.map((item) => normalizeBoolSample(item));
+      case "string":
+      default:
+        return arrayValues.map((item) => String(item));
+    }
+  }
+
+  switch (descriptor.scalarType) {
+    case "bytes":
+      return Buffer.from(String(sampleValue), "base64");
+    case "int64":
+    case "uint64":
+    case "sint64":
+      return sampleValue;
+    case "float":
+    case "int32":
+    case "uint32":
+    case "sint32":
+      return Number(sampleValue);
+    case "bool":
+      return normalizeBoolSample(sampleValue as string | number | boolean);
+    case "string":
+    default:
+      return String(sampleValue);
+  }
+}
+
+function buildAlternateEncodings(descriptor: SimpleScalarMessageDescriptor, sampleValue: SampleValue): string[] {
+  if (!descriptor.isRepeated) {
+    return [];
+  }
+  if (!PACKABLE_SCALAR_TYPES.has(descriptor.scalarType)) {
+    return [];
+  }
+
+  const arrayValues = (Array.isArray(sampleValue) ? sampleValue : [sampleValue]) as Array<string | number | boolean>;
+  if (arrayValues.length === 0) {
+    return [];
+  }
+
+  const writer = Writer.create();
+  const tag = (descriptor.field.id << 3) | WIRE_TYPE_BY_SCALAR[descriptor.scalarType];
+
+  switch (descriptor.scalarType) {
+    case "int32":
+      arrayValues.forEach((value) => writer.uint32(tag).int32(Number(value)));
+      break;
+    case "uint32":
+      arrayValues.forEach((value) => writer.uint32(tag).uint32(Number(value)));
+      break;
+    case "sint32":
+      arrayValues.forEach((value) => writer.uint32(tag).sint32(Number(value)));
+      break;
+    case "int64":
+      arrayValues.forEach((value) => writer.uint32(tag).int64(String(value)));
+      break;
+    case "uint64":
+      arrayValues.forEach((value) => writer.uint32(tag).uint64(String(value)));
+      break;
+    case "sint64":
+      arrayValues.forEach((value) => writer.uint32(tag).sint64(String(value)));
+      break;
+    case "bool":
+      arrayValues.forEach((value) => writer.uint32(tag).bool(normalizeBoolSample(value)));
+      break;
+    case "float":
+      arrayValues.forEach((value) => writer.uint32(tag).float(Number(value)));
+      break;
+    default:
+      return [];
+  }
+
+  const buffer = writer.finish();
+  if (buffer.length === 0) {
+    return [];
+  }
+  return [Buffer.from(buffer).toString("base64")];
+}
+
+function normalizeBoolSample(value: string | number | boolean): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  const lower = value.toLowerCase();
+  return lower === "true" || lower === "1";
+}
+
 function buildSint64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: string; label: string }> {
   const dynamicPos = String(descriptor.field.id * 750000000 + 1357);
   const dynamicNeg = "-" + dynamicPos;
@@ -301,6 +470,10 @@ function escapeBrsString(value: string): string {
 }
 
 function formatBrsValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    const formattedItems = value.map((item) => formatBrsValue(item));
+    return `[${formattedItems.join(", ")}]`;
+  }
   if (typeof value === "boolean") {
     return value ? "true" : "false";
   }

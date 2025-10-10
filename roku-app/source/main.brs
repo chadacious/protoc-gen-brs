@@ -64,22 +64,33 @@ sub Main()
         print "    baseline encode: " + expectedEncoded
         print "    runtime encode:  " + actualEncoded
 
-        decodedValue = invalid
-        if decodedResult <> invalid then
-            if GetInterface(decodedResult, "ifAssociativeArray") <> invalid then
-                decodedValue = decodedResult.Lookup(testCase.field)
-                else
-                    decodedValue = decodedResult[testCase.field]
-                end if
-            end if
+        decodedValue = ExtractFieldValue(decodedResult, testCase.field)
 
         print "    baseline value:  "; expectedValue
         print "    runtime value:   "; decodedValue
 
         encodeMatch = actualEncoded = expectedEncoded
-        decodeMatch = decodedValue = expectedValue
+        decodeMatch = ValuesMatch(expectedValue, decodedValue)
 
-        if encodeMatch and decodeMatch then
+        altDecodedMatch = true
+        altEncodedFailure = invalid
+        altEncodings = invalid
+        if GetInterface(testCase, "ifAssociativeArray") <> invalid then
+            altEncodings = testCase.Lookup("alternateEncodings")
+        end if
+        if GetInterface(altEncodings, "ifArray") <> invalid then
+            for each altEncoded in altEncodings
+                altDecodedResult = handler.decode(altEncoded)
+                altDecodedValue = ExtractFieldValue(altDecodedResult, testCase.field)
+                if not ValuesMatch(expectedValue, altDecodedValue) then
+                    altDecodedMatch = false
+                    altEncodedFailure = altEncoded
+                    exit for
+                end if
+            end for
+        end if
+
+        if encodeMatch and decodeMatch and altDecodedMatch then
             print "  OK"
             passed = passed + 1
         else
@@ -88,6 +99,9 @@ sub Main()
             print "    actual encode:   "; actualEncoded
             print "    expected value:  "; expectedValue
             print "    actual value:    "; decodedValue
+            if not altDecodedMatch then
+                print "    alternate decode failed for: "; altEncodedFailure
+            end if
             LogMismatchDetails(testCase, expectedEncoded, actualEncoded, testCase.decoded, decodedResult)
         end if
         end if
@@ -117,6 +131,51 @@ sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEnc
     print "    case meta: type="; testCase.type; " field="; testCase.field; " fieldId="; testCase.fieldId
     print "    ---------------------------"
 end sub
+
+function ExtractFieldValue(container as Dynamic, fieldName as String) as Dynamic
+    if container = invalid then return invalid
+    if GetInterface(container, "ifAssociativeArray") <> invalid then
+        if container.DoesExist(fieldName) then
+            return container[fieldName]
+        end if
+        return container.Lookup(fieldName)
+    end if
+    return container[fieldName]
+end function
+
+function ValuesMatch(expected as Dynamic, actual as Dynamic) as Boolean
+    if expected = invalid and actual = invalid then return true
+    if expected = invalid or actual = invalid then return false
+
+    if IsArrayValue(expected) and IsArrayValue(actual) then
+        if expected.Count() <> actual.Count() then return false
+        for i = 0 to expected.Count() - 1
+            if not ValuesMatch(expected[i], actual[i]) then return false
+        end for
+        return true
+    end if
+
+    if IsAssociativeValue(expected) and IsAssociativeValue(actual) then
+        keys = expected.Keys()
+        otherKeys = actual.Keys()
+        if otherKeys.Count() <> keys.Count() then return false
+        for each key in keys
+            if actual.DoesExist(key) = false then return false
+            if not ValuesMatch(expected[key], actual[key]) then return false
+        end for
+        return true
+    end if
+
+    return expected = actual
+end function
+
+function IsArrayValue(value as Dynamic) as Boolean
+    return value <> invalid and GetInterface(value, "ifArray") <> invalid
+end function
+
+function IsAssociativeValue(value as Dynamic) as Boolean
+    return value <> invalid and GetInterface(value, "ifAssociativeArray") <> invalid
+end function
 
 function ByteArrayToHex(bytes as Object) as String
     if bytes = invalid then return "<invalid>"

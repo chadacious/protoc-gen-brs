@@ -114,17 +114,50 @@ function renderTemplate(template: string, context: Record<string, string>): stri
   });
 }
 
-const MESSAGE_TEMPLATE_MAP: Record<SupportedScalarType, string> = {
-  string: "messages/string.brs.tmpl",
-  int32: "messages/int32.brs.tmpl",
-  uint32: "messages/uint32.brs.tmpl",
-  sint32: "messages/sint32.brs.tmpl",
-  int64: "messages/int64.brs.tmpl",
-  uint64: "messages/uint64.brs.tmpl",
-  sint64: "messages/sint64.brs.tmpl",
-  bool: "messages/bool.brs.tmpl",
-  bytes: "messages/bytes.brs.tmpl",
-  float: "messages/float.brs.tmpl"
+const MESSAGE_TEMPLATE_MAP: Record<
+  SupportedScalarType,
+  { single: string; repeated?: string }
+> = {
+  string: {
+    single: "messages/string.brs.tmpl",
+    repeated: "messages/repeated/string.brs.tmpl"
+  },
+  int32: {
+    single: "messages/int32.brs.tmpl",
+    repeated: "messages/repeated/int32.brs.tmpl"
+  },
+  uint32: {
+    single: "messages/uint32.brs.tmpl",
+    repeated: "messages/repeated/uint32.brs.tmpl"
+  },
+  sint32: {
+    single: "messages/sint32.brs.tmpl",
+    repeated: "messages/repeated/sint32.brs.tmpl"
+  },
+  int64: {
+    single: "messages/int64.brs.tmpl",
+    repeated: "messages/repeated/int64.brs.tmpl"
+  },
+  uint64: {
+    single: "messages/uint64.brs.tmpl",
+    repeated: "messages/repeated/uint64.brs.tmpl"
+  },
+  sint64: {
+    single: "messages/sint64.brs.tmpl",
+    repeated: "messages/repeated/sint64.brs.tmpl"
+  },
+  bool: {
+    single: "messages/bool.brs.tmpl",
+    repeated: "messages/repeated/bool.brs.tmpl"
+  },
+  bytes: {
+    single: "messages/bytes.brs.tmpl",
+    repeated: "messages/repeated/bytes.brs.tmpl"
+  },
+  float: {
+    single: "messages/float.brs.tmpl",
+    repeated: "messages/repeated/float.brs.tmpl"
+  }
 };
 
 const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
@@ -148,22 +181,33 @@ function renderRuntimeModule(): string {
 
 
 function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): string {
-  const templatePath = MESSAGE_TEMPLATE_MAP[descriptor.scalarType];
-  if (!templatePath) {
+  const templateEntry = MESSAGE_TEMPLATE_MAP[descriptor.scalarType];
+  if (!templateEntry) {
     throw new Error(`Unsupported scalar type: ${descriptor.scalarType}`);
   }
 
   const wireType = WIRE_TYPE_BY_SCALAR[descriptor.scalarType];
   const tag = (descriptor.field.id << 3) | wireType;
+  const templatePath = descriptor.isRepeated ? templateEntry.repeated : templateEntry.single;
+  if (!templatePath) {
+    throw new Error(`No template found for ${descriptor.scalarType} (repeated=${descriptor.isRepeated})`);
+  }
   const template = loadTemplate(templatePath);
 
-  const context = {
+  const context: Record<string, string> = {
     TYPE_NAME: descriptor.type.name,
     FIELD_NAME: descriptor.field.name,
     FIELD_ID: descriptor.field.id.toString(),
     TAG: tag.toString(),
     WIRE_TYPE: wireType.toString()
   };
+
+  if (descriptor.isRepeated) {
+    const packedTag = (descriptor.field.id << 3) | 2;
+    context.PACKED_TAG = packedTag.toString();
+    context.PACKED_WIRE_TYPE = "2";
+    context.ELEMENT_WIRE_TYPE = wireType.toString();
+  }
 
   return renderTemplate(template, context);
 }

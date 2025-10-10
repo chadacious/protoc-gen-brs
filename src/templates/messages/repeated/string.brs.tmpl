@@ -1,0 +1,70 @@
+' Auto-generated encoder/decoder for {{TYPE_NAME}}
+function {{TYPE_NAME}}Encode(message as Object) as String
+    source = invalid
+    if message <> invalid then
+        if GetInterface(message, "ifAssociativeArray") <> invalid then
+            source = message.Lookup("{{FIELD_NAME}}")
+        else
+            source = message.{{FIELD_NAME}}
+        end if
+    end if
+
+    bytes = __pb_createByteArray()
+    if source <> invalid then
+        if GetInterface(source, "ifArray") <> invalid then
+            for each rawValue in source
+                {{TYPE_NAME}}_writeStringValue(bytes, rawValue)
+            end for
+        else
+            {{TYPE_NAME}}_writeStringValue(bytes, source)
+        end if
+    end if
+    return __pb_toBase64(bytes)
+end function
+
+function {{TYPE_NAME}}_writeStringValue(bytes as Object, rawValue as Dynamic) as Void
+    value = rawValue
+    if value = invalid then value = ""
+    valueType = Type(value)
+    if valueType <> "String" and valueType <> "roString" then
+        value = value + ""
+    end if
+    strBytes = __pb_createByteArray()
+    strBytes.FromAsciiString(value)
+    __pb_writeVarint(bytes, {{TAG}})
+    __pb_writeVarint(bytes, strBytes.Count())
+    __pb_appendByteArray(bytes, strBytes)
+end function
+
+function {{TYPE_NAME}}Decode(encoded as String) as Object
+    bytes = __pb_fromBase64(encoded)
+    cursor = 0
+    limit = bytes.Count()
+    message = {}
+    while cursor < limit
+        tagResult = __pb_readVarint(bytes, cursor)
+        cursor = tagResult.nextIndex
+        fieldNumber = Int(tagResult.value / 8)
+        wireType = tagResult.value AND &h07
+        if fieldNumber = {{FIELD_ID}} and wireType = {{WIRE_TYPE}} then
+            lengthResult = __pb_readVarint(bytes, cursor)
+            cursor = lengthResult.nextIndex
+            strLength = lengthResult.value
+            fieldValue = __pb_readString(bytes, cursor, strLength)
+            cursor = cursor + strLength
+
+            values = invalid
+            if GetInterface(message, "ifAssociativeArray") <> invalid and message.DoesExist("{{FIELD_NAME}}") then
+                values = message.{{FIELD_NAME}}
+            end if
+            if values = invalid then
+                values = CreateObject("roArray", 0, true)
+                message.{{FIELD_NAME}} = values
+            end if
+            values.Push(fieldValue)
+        else
+            exit while
+        end if
+    end while
+    return message
+end function

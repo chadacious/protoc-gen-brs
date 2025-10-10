@@ -41,3 +41,35 @@ message SignedCountMessage {
 message SignedLongMessage {
   sint64 delta = 1;
 }
+
+message PackedInt32Message {
+  repeated int32 values = 1;
+}
+
+message PackedUint32Message {
+  repeated uint32 values = 1;
+}
+
+message PackedSint32Message {
+  repeated sint32 values = 1;
+}
+
+message PackedInt64Message {
+  repeated int64 values = 1;
+}
+
+message PackedUint64Message {
+  repeated uint64 values = 1;
+}
+
+message PackedSint64Message {
+  repeated sint64 values = 1;
+}
+
+message PackedBoolMessage {
+  repeated bool values = 1;
+}
+
+message PackedFloatMessage {
+  repeated float values = 1;
+}
