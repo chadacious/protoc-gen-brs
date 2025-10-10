@@ -15,7 +15,8 @@
     "generate:baseline": "ts-node --project tsconfig.json src/cli.ts baseline",
     "dev": "ts-node --project tsconfig.json src/cli.ts --help",
     "lint": "echo \"TODO: add linting\"",
-    "test": "echo \"TODO: add integration tests\""
+    "test": "ts-node --project tsconfig.json tests/uintTypes.test.ts",
+    "roku:test": "node scripts/runOnDevice.mjs"
   },
   "keywords": [
     "roku",
@@ -38,6 +39,7 @@
     "@types/node": "^24.7.0",
     "@types/yargs": "^17.0.33",
     "brighterscript": "^0.70.1",
+    "roku-deploy": "^3.8.0",
     "rimraf": "^6.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

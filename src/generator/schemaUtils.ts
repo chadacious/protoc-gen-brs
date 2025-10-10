@@ -1,6 +1,6 @@
 import { Namespace, Root, Type, Field } from "protobufjs";
 
-export type SupportedScalarType = "string" | "int32" | "int64" | "bool" | "bytes";
+export type SupportedScalarType = "string" | "int32" | "uint32" | "sint32" | "int64" | "uint64" | "sint64" | "bool" | "bytes";
 
 export interface SimpleScalarMessageDescriptor {
   type: Type;
@@ -8,7 +8,7 @@ export interface SimpleScalarMessageDescriptor {
   scalarType: SupportedScalarType;
 }
 
-const SUPPORTED_SCALAR_TYPES: SupportedScalarType[] = ["string", "int32", "int64", "bool", "bytes"];
+const SUPPORTED_SCALAR_TYPES: SupportedScalarType[] = ["string", "int32", "uint32", "sint32", "int64", "uint64", "sint64", "bool", "bytes"];
 
 export function collectSimpleScalarMessages(root: Root): SimpleScalarMessageDescriptor[] {
   const messages = collectTypes(root);

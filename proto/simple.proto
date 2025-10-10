@@ -21,3 +21,19 @@ message BytesMessage {
 message LongMessage {
   int64 total = 1;
 }
+
+message UnsignedCountMessage {
+  uint32 count = 1;
+}
+
+message UnsignedLongMessage {
+  uint64 total = 1;
+}
+
+message SignedCountMessage {
+  sint32 delta = 1;
+}
+
+message SignedLongMessage {
+  sint64 delta = 1;
+}

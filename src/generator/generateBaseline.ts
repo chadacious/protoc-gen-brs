@@ -134,8 +134,27 @@ function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value:
         { value: descriptor.field.id * 100 + 7, label: "mid" },
         { value: 2147483647, label: "max" }
       ];
+    case "sint32":
+      return [
+        { value: 0, label: "zero" },
+        { value: descriptor.field.id * 50, label: "mid-pos" },
+        { value: -descriptor.field.id * 50, label: "mid-neg" },
+        { value: 2147483647, label: "max" },
+        { value: -2147483648, label: "min" }
+      ];
     case "int64":
       return buildInt64Samples(descriptor);
+    case "uint32":
+      return [
+        { value: 0, label: "zero" },
+        { value: descriptor.field.id * 1000 + 42, label: "mid" },
+        { value: 2147483648, label: "int32-max-plus-one" },
+        { value: 4294967295, label: "uint32-max" }
+      ];
+    case "uint64":
+      return buildUint64Samples(descriptor);
+    case "sint64":
+      return buildSint64Samples(descriptor);
     case "bool":
       return [
         { value: false, label: "false" },
@@ -180,6 +199,81 @@ function buildInt64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ v
     { value: "-9223372036854775808", label: "int64-min" }
   ];
 
+  const seen = new Set<string>();
+  const samples: Array<{ value: string; label: string }> = [];
+  for (const entry of entries) {
+    if (seen.has(entry.value)) {
+      continue;
+    }
+    seen.add(entry.value);
+    samples.push(entry);
+  }
+  return samples;
+}
+
+function buildUint64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: string; label: string }> {
+  const dynamicMid = String(descriptor.field.id * 500000000 + 2468);
+  const entries = [
+    { value: "0", label: "zero" },
+    { value: "1", label: "one" },
+    { value: "63", label: "one-byte-max-minus" },
+    { value: "64", label: "two-byte-min" },
+    { value: "127", label: "one-byte-max" },
+    { value: "128", label: "two-byte-boundary" },
+    { value: "255", label: "two-byte-mid" },
+    { value: "256", label: "two-byte-plus-one" },
+    { value: "16383", label: "two-byte-max" },
+    { value: "16384", label: "three-byte-boundary" },
+    { value: "2097151", label: "three-byte-max" },
+    { value: "2097152", label: "four-byte-boundary" },
+    { value: dynamicMid, label: "mid" },
+    { value: "2147483647", label: "int32-max" },
+    { value: "2147483648", label: "int32-max-plus-one" },
+    { value: "4294967295", label: "uint32-max" },
+    { value: "8589934592", label: "uint32-double" },
+    { value: "9007199254740991", label: "safe-max" },
+    { value: "18446744073709551615", label: "uint64-max" }
+  ];
+  const seen = new Set<string>();
+  const samples: Array<{ value: string; label: string }> = [];
+  for (const entry of entries) {
+    if (seen.has(entry.value)) {
+      continue;
+    }
+    seen.add(entry.value);
+    samples.push(entry);
+  }
+  return samples;
+}
+
+function buildSint64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: string; label: string }> {
+  const dynamicPos = String(descriptor.field.id * 750000000 + 1357);
+  const dynamicNeg = "-" + dynamicPos;
+  const entries = [
+    { value: "0", label: "zero" },
+    { value: "1", label: "one" },
+    { value: "-1", label: "neg-one" },
+    { value: "63", label: "one-byte-max-minus" },
+    { value: "-63", label: "neg-one-byte-max-minus" },
+    { value: "64", label: "two-byte-min" },
+    { value: "-64", label: "neg-two-byte-min" },
+    { value: "127", label: "one-byte-max" },
+    { value: "-128", label: "neg-two-byte-boundary" },
+    { value: "255", label: "two-byte-mid" },
+    { value: "-255", label: "neg-two-byte-mid" },
+    { value: "16383", label: "two-byte-max" },
+    { value: "-16384", label: "neg-two-byte-max" },
+    { value: "2097151", label: "three-byte-max" },
+    { value: "-2097152", label: "neg-three-byte-max" },
+    { value: dynamicPos, label: "mid-pos" },
+    { value: dynamicNeg, label: "mid-neg" },
+    { value: "2147483647", label: "int32-max" },
+    { value: "-2147483648", label: "int32-min" },
+    { value: "9007199254740991", label: "safe-max" },
+    { value: "-9007199254740991", label: "neg-safe-max" },
+    { value: "9223372036854775807", label: "int64-max" },
+    { value: "-9223372036854775808", label: "int64-min" }
+  ];
   const seen = new Set<string>();
   const samples: Array<{ value: string; label: string }> = [];
   for (const entry of entries) {

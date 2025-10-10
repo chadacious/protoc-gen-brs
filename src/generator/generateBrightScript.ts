@@ -80,7 +80,7 @@ function __pb_truncate(value as Double) as Double
     return value - remainder
 end function
 
-function __pb_writeVarint(target as Object, value as Integer) as Void
+function __pb_writeVarint(target as Object, value as Dynamic) as Void
     if target = invalid then return
     if value = invalid then return
     v = __pb_truncate(value)
@@ -282,6 +282,82 @@ function __pb_writeVarint64(target as Object, value as Dynamic) as Void
     for i = 0 to bytes.Count() - 1
         target.Push(bytes[i])
     end for
+end function
+
+function __pb_encodeZigZag32(value as Integer) as String
+    if value >= 0 then
+        magnitude = __pb_doubleToDecimalString(value)
+        return __pb_trimLeadingZeros(__pb_decimalMultiplyBySmall(magnitude, 2))
+    end if
+    magnitude = __pb_doubleToDecimalString(0 - value)
+    doubled = __pb_decimalMultiplyBySmall(magnitude, 2)
+    return __pb_trimLeadingZeros(__pb_decimalSubtract(doubled, "1"))
+end function
+
+function __pb_decodeZigZag32(value as Dynamic) as Double
+    if value = invalid then return 0
+    unsignedStr = __pb_doubleToDecimalString(__pb_toUnsigned32(value))
+    parts = __pb_decimalDivMod(unsignedStr, 2)
+    quotient = __pb_trimLeadingZeros(parts.quotient)
+    if parts.remainder = 0 then
+        return __pb_toLong(quotient)
+    end if
+    negMag = __pb_decimalAdd(quotient, "1")
+    return 0 - __pb_toLong(negMag)
+end function
+
+function __pb_toUnsigned32(value as Dynamic) as Double
+    if value = invalid then return 0
+    result = value + 0.0
+    if result < 0 then
+        result = result + 4294967296#
+    end if
+    return result
+end function
+
+function __pb_toSigned32(value as Dynamic) as Double
+    if value = invalid then return 0
+    result = __pb_toUnsigned32(value)
+    if result >= 2147483648# then
+        result = result - 4294967296#
+    end if
+    return result
+end function
+
+function __pb_encodeZigZag64(value as Dynamic) as String
+    valueType = Type(value)
+    valueStr = "0"
+    if valueType = "String" or valueType = "roString" then
+        valueStr = value.Trim()
+        if valueStr = "" then valueStr = "0"
+    else
+        valueStr = __pb_toDecimalString(value)
+    end if
+    if Left(valueStr, 1) = "+" then
+        valueStr = Mid(valueStr, 2)
+    end if
+    if Left(valueStr, 1) = "-" then
+        magnitude = Mid(valueStr, 2)
+        magnitude = __pb_trimLeadingZeros(magnitude)
+        twice = __pb_decimalMultiplyBySmall(magnitude, 2)
+        encoded = __pb_decimalSubtract(twice, "1")
+    else
+        magnitude = __pb_trimLeadingZeros(valueStr)
+        encoded = __pb_decimalMultiplyBySmall(magnitude, 2)
+    end if
+    return __pb_trimLeadingZeros(encoded)
+end function
+
+function __pb_decodeZigZag64(value as String) as String
+    trimmed = __pb_trimLeadingZeros(value)
+    if trimmed = "0" then return "0"
+    parts = __pb_decimalDivMod(trimmed, 2)
+    if parts.remainder = 0 then
+        return __pb_trimLeadingZeros(parts.quotient)
+    end if
+    incremented = __pb_decimalAdd(trimmed, "1")
+    halfParts = __pb_decimalDivMod(incremented, 2)
+    return "-" + __pb_trimLeadingZeros(halfParts.quotient)
 end function
 
 function __pb_decimalAdd(a as String, b as String) as String
@@ -549,6 +625,12 @@ sub __pb_registerRuntime()
     globalAA.__pb_toDecimalString = __pb_toDecimalString
     globalAA.__pb_truncate = __pb_truncate
     globalAA.__pb_toSignedInt64String = __pb_toSignedInt64String
+    globalAA.__pb_encodeZigZag32 = __pb_encodeZigZag32
+    globalAA.__pb_decodeZigZag32 = __pb_decodeZigZag32
+    globalAA.__pb_encodeZigZag64 = __pb_encodeZigZag64
+    globalAA.__pb_decodeZigZag64 = __pb_decodeZigZag64
+    globalAA.__pb_toUnsigned32 = __pb_toUnsigned32
+    globalAA.__pb_toSigned32 = __pb_toSigned32
 end sub`;
 
   return base;
@@ -656,7 +738,109 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
       `        if fieldNumber = ${fieldId} and wireType = 0 then`,
       "            valueResult = __pb_readVarint(bytes, cursor)",
       "            cursor = valueResult.nextIndex",
-      `            message.${fieldName} = valueResult.value`,
+      `            message.${fieldName} = __pb_toSigned32(valueResult.value)`,
+      "        else",
+      "            exit while",
+      "        end if",
+      "    end while",
+      "    return message",
+      "end function",
+      ""
+    ].join("\n");
+  }
+
+  if (descriptor.scalarType === "sint32") {
+    const tag = (fieldId << 3) | 0;
+    return [
+      `' Auto-generated encoder/decoder for ${typeName}`,
+      `function ${typeName}Encode(message as Object) as String`,
+      "    value = 0",
+      "    if message <> invalid then",
+      "        if GetInterface(message, \"ifAssociativeArray\") <> invalid then",
+      `            existing = message.Lookup(\"${fieldName}\")`,
+      "            if existing <> invalid then",
+      "                value = existing",
+      "            end if",
+      "        else",
+      `            candidate = message.${fieldName}`,
+      "            if candidate <> invalid then",
+      "                value = candidate",
+      "            end if",
+      "        end if",
+      "    end if",
+      "    value = Int(value)",
+      "    encoded = __pb_encodeZigZag32(value)",
+      "",
+      "    bytes = __pb_createByteArray()",
+      `    __pb_writeVarint(bytes, ${tag})`,
+      "    __pb_writeVarint64(bytes, encoded)",
+      "    return __pb_toBase64(bytes)",
+      "end function",
+      "",
+      `function ${typeName}Decode(encoded as String) as Object`,
+      "    bytes = __pb_fromBase64(encoded)",
+      "    cursor = 0",
+      "    limit = bytes.Count()",
+      "    message = {}",
+      "    while cursor < limit",
+      "        tagResult = __pb_readVarint(bytes, cursor)",
+      "        cursor = tagResult.nextIndex",
+      "        fieldNumber = Int(tagResult.value / 8)",
+      "        wireType = tagResult.value AND &h07",
+      `        if fieldNumber = ${fieldId} and wireType = 0 then`,
+      "            valueResult = __pb_readVarint(bytes, cursor)",
+      "            cursor = valueResult.nextIndex",
+      `            message.${fieldName} = __pb_decodeZigZag32(valueResult.value)`,
+      "        else",
+      "            exit while",
+      "        end if",
+      "    end while",
+      "    return message",
+      "end function",
+      ""
+    ].join("\n");
+  }
+
+  if (descriptor.scalarType === "uint32") {
+    const tag = (fieldId << 3) | 0;
+    return [
+      `' Auto-generated encoder/decoder for ${typeName}`,
+      `function ${typeName}Encode(message as Object) as String`,
+      "    value = 0",
+      "    if message <> invalid then",
+      "        if GetInterface(message, \"ifAssociativeArray\") <> invalid then",
+      `            existing = message.Lookup(\"${fieldName}\")`,
+      "            if existing <> invalid then",
+      "                value = existing",
+      "            end if",
+      "        else",
+      `            candidate = message.${fieldName}`,
+      "            if candidate <> invalid then",
+      "                value = candidate",
+      "            end if",
+      "        end if",
+      "    end if",
+      "",
+      "    bytes = __pb_createByteArray()",
+      `    __pb_writeVarint(bytes, ${tag})`,
+      "    __pb_writeVarint64(bytes, value)",
+      "    return __pb_toBase64(bytes)",
+      "end function",
+      "",
+      `function ${typeName}Decode(encoded as String) as Object`,
+      "    bytes = __pb_fromBase64(encoded)",
+      "    cursor = 0",
+      "    limit = bytes.Count()",
+      "    message = {}",
+      "    while cursor < limit",
+      "        tagResult = __pb_readVarint(bytes, cursor)",
+      "        cursor = tagResult.nextIndex",
+      "        fieldNumber = Int(tagResult.value / 8)",
+      "        wireType = tagResult.value AND &h07",
+      `        if fieldNumber = ${fieldId} and wireType = 0 then`,
+      "            valueResult = __pb_readVarint(bytes, cursor)",
+      "            cursor = valueResult.nextIndex",
+      `            message.${fieldName} = __pb_toUnsigned32(valueResult.value)`,
       "        else",
       "            exit while",
       "        end if",
@@ -706,6 +890,107 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
       "            valueResult = __pb_readVarint64(bytes, cursor)",
       "            cursor = valueResult.nextIndex",
       `            message.${fieldName} = __pb_toSignedInt64String(valueResult.value)`,
+      "        else",
+      "            exit while",
+      "        end if",
+      "    end while",
+      "    return message",
+      "end function",
+      ""
+    ].join("\n");
+  }
+
+  if (descriptor.scalarType === "sint64") {
+    const tag = (fieldId << 3) | 0;
+    return [
+      `' Auto-generated encoder/decoder for ${typeName}`,
+      `function ${typeName}Encode(message as Object) as String`,
+      "    value = 0",
+      "    if message <> invalid then",
+      "        if GetInterface(message, \"ifAssociativeArray\") <> invalid then",
+      `            existing = message.Lookup(\"${fieldName}\")`,
+      "            if existing <> invalid then",
+      "                value = existing",
+      "            end if",
+      "        else",
+      `            candidate = message.${fieldName}`,
+      "            if candidate <> invalid then",
+      "                value = candidate",
+      "            end if",
+      "        end if",
+      "    end if",
+      "    encoded = __pb_encodeZigZag64(value)",
+      "",
+      "    bytes = __pb_createByteArray()",
+      `    __pb_writeVarint(bytes, ${tag})`,
+      "    __pb_writeVarint64(bytes, encoded)",
+      "    return __pb_toBase64(bytes)",
+      "end function",
+      "",
+      `function ${typeName}Decode(encoded as String) as Object`,
+      "    bytes = __pb_fromBase64(encoded)",
+      "    cursor = 0",
+      "    limit = bytes.Count()",
+      "    message = {}",
+      "    while cursor < limit",
+      "        tagResult = __pb_readVarint(bytes, cursor)",
+      "        cursor = tagResult.nextIndex",
+      "        fieldNumber = Int(tagResult.value / 8)",
+      "        wireType = tagResult.value AND &h07",
+      `        if fieldNumber = ${fieldId} and wireType = 0 then`,
+      "            valueResult = __pb_readVarint64(bytes, cursor)",
+      "            cursor = valueResult.nextIndex",
+      `            message.${fieldName} = __pb_decodeZigZag64(valueResult.value)`,
+      "        else",
+      "            exit while",
+      "        end if",
+      "    end while",
+      "    return message",
+      "end function",
+      ""
+    ].join("\n");
+  }
+
+  if (descriptor.scalarType === "uint64") {
+    const tag = (fieldId << 3) | 0;
+    return [
+      `' Auto-generated encoder/decoder for ${typeName}`,
+      `function ${typeName}Encode(message as Object) as String`,
+      "    value = 0",
+      "    if message <> invalid then",
+      "        if GetInterface(message, \"ifAssociativeArray\") <> invalid then",
+      `            existing = message.Lookup(\"${fieldName}\")`,
+      "            if existing <> invalid then",
+      "                value = existing",
+      "            end if",
+      "        else",
+      `            candidate = message.${fieldName}`,
+      "            if candidate <> invalid then",
+      "                value = candidate",
+      "            end if",
+      "        end if",
+      "    end if",
+      "",
+      "    bytes = __pb_createByteArray()",
+      `    __pb_writeVarint(bytes, ${tag})`,
+      "    __pb_writeVarint64(bytes, value)",
+      "    return __pb_toBase64(bytes)",
+      "end function",
+      "",
+      `function ${typeName}Decode(encoded as String) as Object`,
+      "    bytes = __pb_fromBase64(encoded)",
+      "    cursor = 0",
+      "    limit = bytes.Count()",
+      "    message = {}",
+      "    while cursor < limit",
+      "        tagResult = __pb_readVarint(bytes, cursor)",
+      "        cursor = tagResult.nextIndex",
+      "        fieldNumber = Int(tagResult.value / 8)",
+      "        wireType = tagResult.value AND &h07",
+      `        if fieldNumber = ${fieldId} and wireType = 0 then`,
+      "            valueResult = __pb_readVarint64(bytes, cursor)",
+      "            cursor = valueResult.nextIndex",
+      `            message.${fieldName} = valueResult.value`,
       "        else",
       "            exit while",
       "        end if",
