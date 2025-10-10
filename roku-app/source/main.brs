@@ -1,6 +1,8 @@
 sub Main()
     print "protoc-gen-brs test harness starting..."
 
+    __pb_resetStringMetrics()
+
     handlers = __pb_getMessageHandlers()
     baseline = GetBaselineData()
 
@@ -27,7 +29,7 @@ sub Main()
         if Type(valueType) <> "String" and Type(valueType) <> "roString" then
             valueType = "unknown"
         end if
-        displayType = LCase(valueType)
+        displayType = __pb_str_LCase(valueType)
         if Type(fieldName) <> "String" and Type(fieldName) <> "roString" then
             fieldName = fieldName + ""
         end if
@@ -90,6 +92,7 @@ sub Main()
 
     print "Summary: "; passed; " of "; total; " cases passed."
     print "Total duration: "; runTimer.TotalMilliseconds(); " ms"
+    __pb_printStringMetrics()
 end sub
 
 sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEncoded as String, baselineDecoded as Object, runtimeDecoded as Object)
@@ -116,9 +119,9 @@ function ByteArrayToHex(bytes as Object) as String
     hex = ""
     for i = 0 to bytes.Count() - 1
         value = bytes[i]
-        hexByte = UCase(StrI(value, 16))
-        if Len(hexByte) < 2 then
-            hexByte = Right("0" + hexByte, 2)
+        hexByte = __pb_str_UCase(__pb_str_StrI(value, 16))
+        if __pb_str_Len(hexByte) < 2 then
+            hexByte = __pb_str_Right("0" + hexByte, 2)
         end if
         hex = hex + hexByte
         if i < bytes.Count() - 1 then

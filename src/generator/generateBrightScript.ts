@@ -68,8 +68,286 @@ export async function generateBrightScriptArtifacts(options: GenerateBrightScrip
   }
 }
 
+const STRING_METRICS_BLOCK = String.raw`
+function __pb_getStringMetricBlockSize() as Integer
+    return 4096
+end function
+
+function __pb_getStringMetricsStore() as Object
+    globalAA = GetGlobalAA()
+    if globalAA = invalid then return {}
+    key = "__pb_stringMetrics"
+    if globalAA.DoesExist(key) = false then
+        globalAA[key] = {}
+    end if
+    return globalAA[key]
+end function
+
+sub __pb_resetStringMetrics()
+    globalAA = GetGlobalAA()
+    if globalAA = invalid then return
+    key = "__pb_stringMetrics"
+    globalAA[key] = {}
+end sub
+
+function __pb_createMetricEntry() as Object
+    entry = {
+        totalMs: 0.0,
+        count: 0,
+        blockCount: 0,
+        blockTimer: invalid,
+        blockAccumMs: 0.0,
+        lastElapsedMs: 0.0
+    }
+    return entry
+end function
+
+sub __pb_prepareStringMetric(name as String)
+    if name = invalid then return
+    metrics = __pb_getStringMetricsStore()
+    if metrics = invalid then return
+    if metrics.DoesExist(name) = false then
+        metrics[name] = __pb_createMetricEntry()
+    end if
+    entry = metrics[name]
+    if entry = invalid then
+        entry = __pb_createMetricEntry()
+        metrics[name] = entry
+    end if
+    entry.count = entry.count + 1
+    if entry.blockTimer = invalid then
+        entry.blockTimer = CreateObject("roTimespan")
+        entry.blockTimer.Mark()
+        entry.blockCount = 0
+        entry.blockAccumMs = 0.0
+        entry.lastElapsedMs = 0.0
+    else if entry.blockCount = 0 and entry.blockAccumMs = 0.0 then
+        entry.blockTimer.Mark()
+        entry.lastElapsedMs = 0.0
+    end if
+end sub
+
+sub __pb_finalizeStringMetric(name as String)
+    if name = invalid then return
+    metrics = __pb_getStringMetricsStore()
+    if metrics = invalid then return
+    entry = metrics[name]
+    if entry = invalid then return
+    entry.blockCount = entry.blockCount + 1
+    if entry.blockTimer <> invalid then
+        elapsed = entry.blockTimer.TotalMilliseconds()
+        increment = elapsed - entry.lastElapsedMs
+        if increment < 0 then increment = 0
+        entry.blockAccumMs = entry.blockAccumMs + increment
+        entry.lastElapsedMs = elapsed
+        blockSize = __pb_getStringMetricBlockSize()
+        if entry.blockCount >= blockSize then
+            if entry.blockAccumMs > 0 then
+                entry.totalMs = entry.totalMs + entry.blockAccumMs
+            end if
+            entry.blockTimer.Mark()
+            entry.blockCount = 0
+            entry.blockAccumMs = 0.0
+            entry.lastElapsedMs = 0.0
+        end if
+    end if
+end sub
+
+sub __pb_flushStringMetrics()
+    metrics = __pb_getStringMetricsStore()
+    if metrics = invalid then return
+    keys = metrics.Keys()
+    if keys = invalid then return
+    for each name in keys
+        entry = metrics[name]
+        if entry <> invalid then
+            if entry.blockAccumMs > 0 then
+                entry.totalMs = entry.totalMs + entry.blockAccumMs
+            end if
+            entry.blockAccumMs = 0.0
+            entry.blockCount = 0
+            entry.lastElapsedMs = 0.0
+            entry.blockTimer = invalid
+        end if
+    end for
+end sub
+
+function __pb_str_FormatJson(value as Dynamic) as Dynamic
+    __pb_prepareStringMetric("FormatJson")
+    result = FormatJson(value)
+    __pb_finalizeStringMetric("FormatJson")
+    return result
+end function
+
+function __pb_str_Mid(value as String, startIndex as Integer, length = invalid) as String
+    __pb_prepareStringMetric("Mid")
+    if length = invalid then
+        result = Mid(value, startIndex)
+    else
+        result = Mid(value, startIndex, length)
+    end if
+    __pb_finalizeStringMetric("Mid")
+    return result
+end function
+
+function __pb_str_Left(value as String, count as Integer) as String
+    __pb_prepareStringMetric("Left")
+    result = Left(value, count)
+    __pb_finalizeStringMetric("Left")
+    return result
+end function
+
+function __pb_str_Right(value as String, count as Integer) as String
+    __pb_prepareStringMetric("Right")
+    result = Right(value, count)
+    __pb_finalizeStringMetric("Right")
+    return result
+end function
+
+function __pb_str_Trim(value as String) as String
+    __pb_prepareStringMetric("Trim")
+    result = value.Trim()
+    __pb_finalizeStringMetric("Trim")
+    return result
+end function
+
+function __pb_str_Replace(value as String, find as String, replacement as String) as String
+    __pb_prepareStringMetric("Replace")
+    result = value.Replace(find, replacement)
+    __pb_finalizeStringMetric("Replace")
+    return result
+end function
+
+function __pb_str_InStr(startIndex as Integer, source as String, pattern as String) as Integer
+    __pb_prepareStringMetric("InStr")
+    result = InStr(startIndex, source, pattern)
+    __pb_finalizeStringMetric("InStr")
+    return result
+end function
+
+function __pb_str_LCase(value as String) as String
+    __pb_prepareStringMetric("LCase")
+    result = LCase(value)
+    __pb_finalizeStringMetric("LCase")
+    return result
+end function
+
+function __pb_str_UCase(value as String) as String
+    __pb_prepareStringMetric("UCase")
+    result = UCase(value)
+    __pb_finalizeStringMetric("UCase")
+    return result
+end function
+
+function __pb_str_StrI(value as Integer, base = invalid) as String
+    __pb_prepareStringMetric("StrI")
+    if base = invalid then
+        result = StrI(value)
+    else
+        result = StrI(value, base)
+    end if
+    __pb_finalizeStringMetric("StrI")
+    return result
+end function
+
+function __pb_str_Chr(value as Integer) as String
+    __pb_prepareStringMetric("Chr")
+    result = Chr(value)
+    __pb_finalizeStringMetric("Chr")
+    return result
+end function
+
+function __pb_str_Asc(value as String) as Integer
+    __pb_prepareStringMetric("Asc")
+    result = Asc(value)
+    __pb_finalizeStringMetric("Asc")
+    return result
+end function
+
+function __pb_str_Len(value as Dynamic) as Integer
+    __pb_prepareStringMetric("Len")
+    result = Len(value)
+    __pb_finalizeStringMetric("Len")
+    return result
+end function
+
+sub __pb_printStringMetrics()
+    metrics = __pb_getStringMetricsStore()
+    if metrics = invalid then return
+    __pb_flushStringMetrics()
+    keys = metrics.Keys()
+    if keys = invalid or keys.Count() = 0 then return
+    print "String Function Timing Totals:"
+    for each name in keys
+        entry = metrics[name]
+        if entry = invalid then
+            entry = { totalMs: 0.0, count: 0, blockCount: 0, blockTimer: invalid }
+            metrics[name] = entry
+        end if
+        totalMs = entry.totalMs
+        count = entry.count
+        avg = 0.0
+        if count > 0 then avg = totalMs / count
+        print "  "; name; " calls="; count; " total(ms)="; totalMs; " avg(ms)="; avg
+    end for
+end sub
+`;
+
+function applyStringInstrumentation(code: string): string {
+  let result = code;
+  result = result.replace(/\b([A-Za-z0-9_]+)\.Trim\(\)/g, "__pb_str_Trim($1)");
+  result = result.replace(/\b([A-Za-z0-9_]+)\.Replace\(([^,]+),\s*([^)]+)\)/g, "__pb_str_Replace($1, $2, $3)");
+
+  const replacements: Array<[RegExp, string]> = [
+    [/\bFormatJson\(/g, "__pb_str_FormatJson("],
+    [/\bMid\(/g, "__pb_str_Mid("],
+    [/\bLeft\(/g, "__pb_str_Left("],
+    [/\bRight\(/g, "__pb_str_Right("],
+    [/\bTrim\(/g, "__pb_str_Trim("],
+    [/\bReplace\(/g, "__pb_str_Replace("],
+    [/\bInStr\(/g, "__pb_str_InStr("],
+    [/\bLCase\(/g, "__pb_str_LCase("],
+    [/\bStrI\(/g, "__pb_str_StrI("],
+    [/\bChr\(/g, "__pb_str_Chr("],
+    [/\bAsc\(/g, "__pb_str_Asc("],
+    [/\bLen\(/g, "__pb_str_Len("]
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    result = result.replace(pattern, replacement);
+  }
+
+  return result;
+}
+
+function injectStringMetricsBlock(code: string): string {
+  const newlineIndex = code.indexOf("\n");
+  if (newlineIndex === -1) {
+    return `${code}\n${STRING_METRICS_BLOCK.trim()}\n`;
+  }
+  const before = code.slice(0, newlineIndex + 1);
+  const after = code.slice(newlineIndex + 1);
+  return `${before}${STRING_METRICS_BLOCK.trim()}\n\n${after}`;
+}
+
+function injectMetricsIntoGlobals(code: string): string {
+  const marker = "    globalAA.__pb_toSignedInt64String = __pb_toSignedInt64String";
+  if (code.includes(marker)) {
+    return code.replace(
+      marker,
+      [
+        marker,
+        "    globalAA.__pb_getStringMetricsStore = __pb_getStringMetricsStore",
+        "    globalAA.__pb_resetStringMetrics = __pb_resetStringMetrics",
+        "    globalAA.__pb_printStringMetrics = __pb_printStringMetrics"
+      ].join("\n")
+    );
+  }
+  return code;
+}
+
 function renderRuntimeModule(): string {
-  return String.raw`' Auto-generated BrightScript runtime helpers for protoc-gen-brs
+  const base = String.raw`' Auto-generated BrightScript runtime helpers for protoc-gen-brs
 function __pb_createByteArray() as Object
     return CreateObject("roByteArray")
 end function
@@ -95,23 +373,42 @@ end function
 
 function __pb_trimLeadingZeros(value as String) as String
     if value = invalid then return "0"
-    length = Len(value)
-    i = 0
-    while i < length and Mid(value, i + 1, 1) = "0"
-        i = i + 1
+    valueType = Type(value)
+    if valueType <> "String" and valueType <> "roString" then
+        value = value + ""
+    end if
+    digits = CreateObject("roByteArray")
+    digits.FromAsciiString(value)
+    count = digits.Count()
+    if count = 0 then return "0"
+    zero = 48
+    index = 0
+    while index < count and digits[index] = zero
+        index = index + 1
     end while
-    if i >= length then return "0"
-    return Mid(value, i + 1)
+    if index >= count then return "0"
+    if index = 0 then return value
+    trimmed = CreateObject("roByteArray")
+    for i = index to count - 1
+        trimmed.Push(digits[i])
+    end for
+    return trimmed.ToAsciiString()
 end function
 
 function __pb_allDigits(value as String) as Boolean
     if value = invalid then return false
-    length = Len(value)
-    if length = 0 then return false
-    zero = Asc("0")
-    nine = Asc("9")
-    for i = 0 to length - 1
-        code = Asc(Mid(value, i + 1, 1))
+    valueType = Type(value)
+    if valueType <> "String" and valueType <> "roString" then
+        value = value + ""
+    end if
+    digits = CreateObject("roByteArray")
+    digits.FromAsciiString(value)
+    count = digits.Count()
+    if count = 0 then return false
+    zero = 48
+    nine = 57
+    for i = 0 to count - 1
+        code = digits[i]
         if code < zero or code > nine then return false
     end for
     return true
@@ -172,25 +469,33 @@ function __pb_normalizeUnsignedDecimal(value as Dynamic) as Dynamic
 end function
 
 function __pb_decimalDivMod(value as String, divisor as Integer) as Object
+    valueType = Type(value)
+    if valueType <> "String" and valueType <> "roString" then
+        value = value + ""
+    end if
+    digits = CreateObject("roByteArray")
+    digits.FromAsciiString(value)
     remainder = 0
-    quotient = ""
-    length = Len(value)
-    for i = 0 to length - 1
-        digit = Asc(Mid(value, i + 1, 1)) - Asc("0")
+    quotient = CreateObject("roByteArray")
+    count = digits.Count()
+    zero = 48
+    for i = 0 to count - 1
+        digit = digits[i] - zero
         remainder = remainder * 10 + digit
         qdigit = 0
         while remainder >= divisor
             remainder = remainder - divisor
             qdigit = qdigit + 1
         end while
-        if Len(quotient) > 0 or qdigit <> 0 then
-            quotient = quotient + Chr(qdigit + Asc("0"))
+        if quotient.Count() > 0 or qdigit <> 0 then
+            quotient.Push(qdigit + zero)
         end if
     end for
-    if Len(quotient) = 0 then quotient = "0"
-    quotient = __pb_trimLeadingZeros(quotient)
+    if quotient.Count() = 0 then
+        quotient.Push(zero)
+    end if
     result = {}
-    result.quotient = quotient
+    result.quotient = quotient.ToAsciiString()
     result.remainder = remainder
     return result
 end function
@@ -260,38 +565,51 @@ end function
 function __pb_decimalAdd(a as String, b as String) as String
     aTrim = __pb_trimLeadingZeros(a)
     bTrim = __pb_trimLeadingZeros(b)
+    aBytes = CreateObject("roByteArray")
+    aBytes.FromAsciiString(aTrim)
+    bBytes = CreateObject("roByteArray")
+    bBytes.FromAsciiString(bTrim)
+    zero = 48
     carry = 0
-    result = ""
-    i = Len(aTrim) - 1
-    j = Len(bTrim) - 1
+    digits = []
+    i = aBytes.Count() - 1
+    j = bBytes.Count() - 1
     while i >= 0 or j >= 0 or carry > 0
         digitA = 0
         if i >= 0 then
-            digitA = Asc(Mid(aTrim, i + 1, 1)) - Asc("0")
+            digitA = aBytes[i] - zero
+            i = i - 1
         end if
         digitB = 0
         if j >= 0 then
-            digitB = Asc(Mid(bTrim, j + 1, 1)) - Asc("0")
+            digitB = bBytes[j] - zero
+            j = j - 1
         end if
         total = digitA + digitB + carry
-        result = Chr((total MOD 10) + Asc("0")) + result
-        carry = __pb_truncate(total / 10)
-        i = i - 1
-        j = j - 1
+        digits.Push((total MOD 10) + zero)
+        carry = Int(total / 10)
     end while
-    return __pb_trimLeadingZeros(result)
+    resultBytes = CreateObject("roByteArray")
+    for k = digits.Count() - 1 to 0 step -1
+        resultBytes.Push(digits[k])
+    end for
+    return resultBytes.ToAsciiString()
 end function
 
 function __pb_decimalCompare(a as String, b as String) as Integer
     aTrim = __pb_trimLeadingZeros(a)
     bTrim = __pb_trimLeadingZeros(b)
-    lenA = Len(aTrim)
-    lenB = Len(bTrim)
+    aBytes = CreateObject("roByteArray")
+    aBytes.FromAsciiString(aTrim)
+    bBytes = CreateObject("roByteArray")
+    bBytes.FromAsciiString(bTrim)
+    lenA = aBytes.Count()
+    lenB = bBytes.Count()
     if lenA > lenB then return 1
     if lenA < lenB then return -1
     for i = 0 to lenA - 1
-        digitA = Asc(Mid(aTrim, i + 1, 1))
-        digitB = Asc(Mid(bTrim, i + 1, 1))
+        digitA = aBytes[i]
+        digitB = bBytes[i]
         if digitA > digitB then return 1
         if digitA < digitB then return -1
     end for
@@ -302,45 +620,64 @@ function __pb_decimalSubtract(a as String, b as String) as String
     if __pb_decimalCompare(a, b) < 0 then return "0"
     aTrim = __pb_trimLeadingZeros(a)
     bTrim = __pb_trimLeadingZeros(b)
-    result = ""
+    aBytes = CreateObject("roByteArray")
+    aBytes.FromAsciiString(aTrim)
+    bBytes = CreateObject("roByteArray")
+    bBytes.FromAsciiString(bTrim)
+    zero = 48
     borrow = 0
-    i = Len(aTrim) - 1
-    j = Len(bTrim) - 1
+    digits = []
+    i = aBytes.Count() - 1
+    j = bBytes.Count() - 1
     while i >= 0
-        digitA = Asc(Mid(aTrim, i + 1, 1)) - Asc("0") - borrow
+        digitA = aBytes[i] - zero - borrow
         borrow = 0
         digitB = 0
         if j >= 0 then
-            digitB = Asc(Mid(bTrim, j + 1, 1)) - Asc("0")
+            digitB = bBytes[j] - zero
+            j = j - 1
         end if
         digitA = digitA - digitB
         if digitA < 0 then
             digitA = digitA + 10
             borrow = 1
         end if
-        result = Chr(digitA + Asc("0")) + result
+        digits.Push(digitA + zero)
         i = i - 1
-        j = j - 1
     end while
-    return __pb_trimLeadingZeros(result)
+    while digits.Count() > 1 and digits[digits.Count() - 1] = zero
+        digits.Pop()
+    end while
+    resultBytes = CreateObject("roByteArray")
+    for k = digits.Count() - 1 to 0 step -1
+        resultBytes.Push(digits[k])
+    end for
+    return resultBytes.ToAsciiString()
 end function
 
 function __pb_decimalMultiplyBySmall(value as String, factor as Integer) as String
     base = __pb_trimLeadingZeros(value)
     if factor = 0 or base = "0" then return "0"
+    digits = CreateObject("roByteArray")
+    digits.FromAsciiString(base)
     carry = 0
-    result = ""
-    for i = Len(base) - 1 to 0 step -1
-        digit = Asc(Mid(base, i + 1, 1)) - Asc("0")
+    zero = 48
+    resultDigits = []
+    for i = digits.Count() - 1 to 0 step -1
+        digit = digits[i] - zero
         total = digit * factor + carry
-        result = Chr((total MOD 10) + Asc("0")) + result
-        carry = __pb_truncate(total / 10)
+        resultDigits.Push((total MOD 10) + zero)
+        carry = Int(total / 10)
     end for
     while carry > 0
-        result = Chr((carry MOD 10) + Asc("0")) + result
-        carry = __pb_truncate(carry / 10)
+        resultDigits.Push((carry MOD 10) + zero)
+        carry = Int(carry / 10)
     end while
-    return __pb_trimLeadingZeros(result)
+    resultBytes = CreateObject("roByteArray")
+    for k = resultDigits.Count() - 1 to 0 step -1
+        resultBytes.Push(resultDigits[k])
+    end for
+    return resultBytes.ToAsciiString()
 end function
 
 function __pb_decimalMultiplyBy128(value as String) as String
@@ -491,7 +828,12 @@ sub __pb_registerRuntime()
     globalAA.__pb_truncate = __pb_truncate
     globalAA.__pb_toSignedInt64String = __pb_toSignedInt64String
 end sub`;
+
+  const instrumented = applyStringInstrumentation(base);
+  const withMetrics = injectStringMetricsBlock(instrumented);
+  return injectMetricsIntoGlobals(withMetrics);
 }
+
 
 function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): string {
   const typeName = descriptor.type.name;
@@ -676,7 +1018,7 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
       "",
       "    valueType = Type(value)",
       "    if valueType = \"String\" or valueType = \"roString\" then",
-      "        lower = LCase(value)",
+      "        lower = __pb_str_LCase(value)",
       "        value = (lower = \"true\") or (lower = \"1\")",
       "    else if valueType = \"Boolean\" or valueType = \"roBoolean\" then",
       "        ' keep as is",
