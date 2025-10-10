@@ -338,21 +338,21 @@ function __pb_parseDecimalToDouble(value as String) as Double
     if value = invalid then return 0
     str = value.Trim()
     if str = "" then return 0
-    sign = 1.0
+    sign = 1#
     if Left(str, 1) = "-" then
-        sign = -1.0
+        sign = -1#
         str = Mid(str, 2)
     else if Left(str, 1) = "+" then
         str = Mid(str, 2)
     end if
     digitsStr = __pb_trimLeadingZeros(str)
     if digitsStr = "0" then return 0
-    result = 0.0
+    result = 0#
     length = Len(digitsStr)
     for i = 0 to length - 1
         digitChar = Mid(digitsStr, i + 1, 1)
         digitVal = Asc(digitChar) - Asc("0")
-        result = result * 10 + digitVal
+        result = (result * 10#) + (digitVal + 0#)
     end for
     return sign * result
 end function
@@ -599,6 +599,112 @@ function __pb_readVarint64(bytes as Object, startIndex as Integer) as Object
     return result
 end function
 
+function __pb_readFixed32(bytes as Object, startIndex as Integer) as Object
+    result = {}
+    value = 0#
+    multiplier = 1#
+    for i = 0 to 3
+        byteVal = bytes[startIndex + i] AND &hFF
+        value = value + (byteVal * multiplier)
+        multiplier = multiplier * 256#
+    end for
+    result.value = value
+    result.nextIndex = startIndex + 4
+    return result
+end function
+
+function __pb_floatToUint32(value as Double) as Double
+    if value = invalid then return 0
+    if value = 0 then return 0
+    signBit = 0
+    if value < 0 then
+        signBit = 1
+        value = 0 - value
+    end if
+    if value = 0 then return signBit * 2147483648#
+    exponent = 0
+    mantissa = value
+    while mantissa >= 2#
+        mantissa = mantissa / 2#
+        exponent = exponent + 1
+    end while
+    while mantissa < 1# and exponent > -126
+        mantissa = mantissa * 2#
+        exponent = exponent - 1
+    end while
+    mantissa = mantissa - 1#
+    mantissaInt = Int((mantissa * 8388608#) + 0.5#)
+    if mantissaInt = 8388608 then
+        mantissaInt = 0
+        exponent = exponent + 1
+    end if
+    exponent = exponent + 127
+    if exponent <= 0 then
+        exponent = 0
+        mantissaInt = 0
+    else if exponent >= 255 then
+        exponent = 255
+        mantissaInt = 0
+    end if
+    return (signBit * 2147483648#) + (exponent * 8388608#) + mantissaInt
+end function
+
+function __pb_uint32ToFloat(bits as Double) as Double
+    unsigned = bits
+    if unsigned < 0 then
+        unsigned = unsigned + 4294967296#
+    end if
+    signBit = 0
+    if unsigned >= 2147483648# then
+        signBit = 1
+        unsigned = unsigned - 2147483648#
+    end if
+    exponent = Fix(unsigned / 8388608#)
+    mantissa = unsigned - (exponent * 8388608#)
+    value = 0#
+    if exponent = 255 then
+        if mantissa = 0 then
+            if signBit = 1 then
+                return -1e308
+            else
+                return 1e308
+            end if
+        end if
+        return 0
+    else if exponent = 0 then
+        if mantissa <> 0 then
+            fraction = mantissa / 8388608#
+            value = fraction * (2 ^ (-126))
+        end if
+    else
+        fraction = 1# + (mantissa / 8388608#)
+        power = exponent - 127
+        value = fraction * (2 ^ power)
+    end if
+    if signBit = 1 then
+        value = 0 - value
+    end if
+    return value
+end function
+
+function __pb_writeFloat32(target as Object, value as Dynamic) as Void
+    if target = invalid then return
+    bits = __pb_floatToUint32(__pb_toLong(value))
+    current = __pb_doubleToDecimalString(bits)
+    for i = 0 to 3
+        parts = __pb_decimalDivMod(current, 256)
+        remainder = __pb_truncate(parts.remainder)
+        target.Push(Int(remainder))
+        current = parts.quotient
+    end for
+end function
+
+function __pb_readFloat32(bytes as Object, startIndex as Integer) as Object
+    fixed = __pb_readFixed32(bytes, startIndex)
+    fixed.value = __pb_uint32ToFloat(fixed.value)
+    return fixed
+end function
+
 function __pb_readString(bytes as Object, startIndex as Integer, length as Integer) as String
     text = ""
     for i = 0 to length - 1
@@ -666,6 +772,11 @@ sub __pb_registerRuntime()
     globalAA.__pb_toSigned32 = __pb_toSigned32
     globalAA.__pb_toSigned32FromString = __pb_toSigned32FromString
     globalAA.__pb_parseDecimalToDouble = __pb_parseDecimalToDouble
+    globalAA.__pb_readFixed32 = __pb_readFixed32
+    globalAA.__pb_readFloat32 = __pb_readFloat32
+    globalAA.__pb_writeFloat32 = __pb_writeFloat32
+    globalAA.__pb_floatToUint32 = __pb_floatToUint32
+    globalAA.__pb_uint32ToFloat = __pb_uint32ToFloat
 end sub`;
 
   return base;
@@ -723,6 +834,57 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
       "            fieldValue = __pb_readString(bytes, cursor, strLength)",
       "            cursor = cursor + strLength",
       `            message.${fieldName} = fieldValue`,
+      "        else",
+      "            exit while",
+      "        end if",
+      "    end while",
+      "    return message",
+      "end function",
+      ""
+    ].join("\n");
+  }
+
+  if (descriptor.scalarType === "float") {
+    const tag = (fieldId << 3) | 5;
+    return [
+      `' Auto-generated encoder/decoder for ${typeName}`,
+      `function ${typeName}Encode(message as Object) as String`,
+      "    value = 0.0",
+      "    if message <> invalid then",
+      "        if GetInterface(message, \"ifAssociativeArray\") <> invalid then",
+      `            existing = message.Lookup(\"${fieldName}\")`,
+      "            if existing <> invalid then",
+      "                value = existing",
+      "            end if",
+      "        else",
+      `            candidate = message.${fieldName}`,
+      "            if candidate <> invalid then",
+      "                value = candidate",
+      "            end if",
+      "        end if",
+      "    end if",
+      "    value = __pb_toLong(value)",
+      "",
+      "    bytes = __pb_createByteArray()",
+      `    __pb_writeVarint(bytes, ${tag})`,
+      "    __pb_writeFloat32(bytes, value)",
+      "    return __pb_toBase64(bytes)",
+      "end function",
+      "",
+      `function ${typeName}Decode(encoded as String) as Object`,
+      "    bytes = __pb_fromBase64(encoded)",
+      "    cursor = 0",
+      "    limit = bytes.Count()",
+      "    message = {}",
+      "    while cursor < limit",
+      "        tagResult = __pb_readVarint(bytes, cursor)",
+      "        cursor = tagResult.nextIndex",
+      "        fieldNumber = Int(tagResult.value / 8)",
+      "        wireType = tagResult.value AND &h07",
+      `        if fieldNumber = ${fieldId} and wireType = 5 then`,
+      "            floatResult = __pb_readFloat32(bytes, cursor)",
+      "            cursor = floatResult.nextIndex",
+      `            message.${fieldName} = floatResult.value`,
       "        else",
       "            exit while",
       "        end if",

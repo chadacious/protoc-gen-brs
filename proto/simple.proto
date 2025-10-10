@@ -14,6 +14,10 @@ message FlagMessage {
   bool enabled = 1;
 }
 
+message FloatMessage {
+  float value = 1;
+}
+
 message BytesMessage {
   bytes data = 1;
 }

@@ -160,6 +160,16 @@ function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value:
         { value: false, label: "false" },
         { value: true, label: "true" }
       ];
+    case "float":
+      return [
+        { value: 0, label: "zero" },
+        { value: 1, label: "one" },
+        { value: -1, label: "neg-one" },
+        { value: 3.1415927, label: "pi" },
+        { value: -123.456, label: "neg-mid" },
+        { value: 123456.789, label: "large" },
+        { value: 1.17549435e-38, label: "min-normal" }
+      ];
     case "bytes":
     default:
       return [
