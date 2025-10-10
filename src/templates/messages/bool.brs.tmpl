@@ -1,0 +1,56 @@
+' Auto-generated encoder/decoder for {{TYPE_NAME}}
+function {{TYPE_NAME}}Encode(message as Object) as String
+    value = false
+    if message <> invalid then
+        if GetInterface(message, "ifAssociativeArray") <> invalid then
+            existing = message.Lookup("{{FIELD_NAME}}")
+            if existing <> invalid then
+                value = existing
+            end if
+        else
+            candidate = message.{{FIELD_NAME}}
+            if candidate <> invalid then
+                value = candidate
+            end if
+        end if
+    end if
+
+    valueType = Type(value)
+    if valueType = "String" or valueType = "roString" then
+        lower = LCase(value)
+        value = (lower = "true") or (lower = "1")
+    else if valueType = "Boolean" or valueType = "roBoolean" then
+        ' keep as is
+    else
+        value = (value <> 0)
+    end if
+
+    bytes = __pb_createByteArray()
+    __pb_writeVarint(bytes, {{TAG}})
+    boolInt = 0
+    if value = true then boolInt = 1
+    __pb_writeVarint(bytes, boolInt)
+    return __pb_toBase64(bytes)
+end function
+
+function {{TYPE_NAME}}Decode(encoded as String) as Object
+    bytes = __pb_fromBase64(encoded)
+    cursor = 0
+    limit = bytes.Count()
+    message = {}
+    while cursor < limit
+        tagResult = __pb_readVarint(bytes, cursor)
+        cursor = tagResult.nextIndex
+        fieldNumber = Int(tagResult.value / 8)
+        wireType = tagResult.value AND &h07
+        if fieldNumber = {{FIELD_ID}} and wireType = {{WIRE_TYPE}} then
+            valueResult = __pb_readVarint(bytes, cursor)
+            cursor = valueResult.nextIndex
+            message.{{FIELD_NAME}} = (valueResult.value <> 0)
+        else
+            exit while
+        end if
+    end while
+    return message
+end function
+

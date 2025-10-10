@@ -1,4 +1,11 @@
+' Library "pkg:/source/generated/runtime.brs"
+' Library "pkg:/source/generated/messages/__index.brs"
+' Library "pkg:/source/generated/__baselineData.brs"
+
 sub Main()
+    Run("pkg:/source/generated/runtime.brs")
+    Run("pkg:/source/generated/messages/__index.brs")
+    Run("pkg:/source/generated/__baselineData.brs")
     print "protoc-gen-brs test harness starting..."
 
     handlers = __pb_getMessageHandlers()

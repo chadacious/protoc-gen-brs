@@ -6,3 +6,5 @@ fixtures/baseline
 roku-app/source/generated
 npm-debug.log*
 package-lock.json
+.roku-deploy/
+generated/
