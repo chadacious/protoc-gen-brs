@@ -25,6 +25,26 @@ message FloatMessage {
   float value = 1;
 }
 
+message DoubleMessage {
+  double value = 1;
+}
+
+message Fixed32Message {
+  fixed32 value = 1;
+}
+
+message Sfixed32Message {
+  sfixed32 value = 1;
+}
+
+message Fixed64Message {
+  fixed64 value = 1;
+}
+
+message Sfixed64Message {
+  sfixed64 value = 1;
+}
+
 message BytesMessage {
   bytes data = 1;
 }
@@ -79,6 +99,26 @@ message PackedBoolMessage {
 
 message PackedFloatMessage {
   repeated float values = 1;
+}
+
+message RepeatedDoubleMessage {
+  repeated double values = 1;
+}
+
+message RepeatedFixed32Message {
+  repeated fixed32 values = 1;
+}
+
+message RepeatedSfixed32Message {
+  repeated sfixed32 values = 1;
+}
+
+message RepeatedFixed64Message {
+  repeated fixed64 values = 1;
+}
+
+message RepeatedSfixed64Message {
+  repeated sfixed64 values = 1;
 }
 
 message EnumMessage {

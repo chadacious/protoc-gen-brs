@@ -15,7 +15,7 @@ const LOG_PATH = path.join(OUT_DIR, "roku-log.txt");
 const host = process.env.ROKU_HOST;
 const password = process.env.ROKU_PASSWORD;
 const username = process.env.ROKU_USERNAME ?? "rokudev";
-const telnetTimeoutMs = Number(process.env.ROKU_TELNET_TIMEOUT_MS ?? 120000);
+const telnetTimeoutMs = Number(process.env.ROKU_TELNET_TIMEOUT_MS ?? 5000);
 
 if (!host || !password) {
   console.error("ROKU_HOST and ROKU_PASSWORD environment variables are required.");
@@ -68,16 +68,27 @@ async function captureTelnetLog() {
     let startDetected = false;
     let finalized = false;
 
-    const timeout = setTimeout(() => {
-      finalize(new Error('Timed out waiting for Roku console output.'));
-    }, telnetTimeoutMs);
+    let timeout = null;
+
+    function refreshTimeout() {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      timeout = setTimeout(() => {
+        finalize(new Error('Timed out waiting for Roku console output.'));
+      }, telnetTimeoutMs);
+    }
+
+    refreshTimeout();
 
     function finalize(result) {
       if (finalized) {
         return;
       }
       finalized = true;
-      clearTimeout(timeout);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
       try {
         if (logStream) {
           logStream.end();
@@ -167,6 +178,8 @@ async function captureTelnetLog() {
     });
 
     socket.on('data', (chunk) => {
+      refreshTimeout();
+
       const text = chunk.toString();
       buffer += text;
       const lines = buffer.split(/\r?\n/);

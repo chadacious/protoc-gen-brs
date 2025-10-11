@@ -20,6 +20,11 @@ const PACKABLE_SCALAR_TYPES = new Set<SupportedScalarType>([
   "sint64",
   "bool",
   "float",
+  "double",
+  "fixed32",
+  "sfixed32",
+  "fixed64",
+  "sfixed64",
   "enum"
 ]);
 
@@ -34,6 +39,11 @@ const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
   bool: 0,
   bytes: 2,
   float: 5,
+  double: 1,
+  fixed32: 5,
+  sfixed32: 5,
+  fixed64: 1,
+  sfixed64: 1,
   enum: 0
 };
 
@@ -243,6 +253,46 @@ function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value:
         { value: 123456.789, label: "large" },
         { value: 1.17549435e-38, label: "min-normal" }
       ];
+    case "double":
+      return [
+        { value: 0, label: "zero" },
+        { value: 1, label: "one" },
+        { value: -1, label: "neg-one" },
+        { value: 3.141592653589793, label: "pi" },
+        { value: -987654321.1234567, label: "neg-mid" },
+        { value: 9007199254740992, label: "precise-boundary" },
+        { value: 2.2250738585072014e-308, label: "min-normal" }
+      ];
+    case "fixed32":
+      return [
+        { value: 0, label: "zero" },
+        { value: descriptor.field.id * 5000 + 123, label: "mid" },
+        { value: 2147483647, label: "int32-max" },
+        { value: 4294967295, label: "uint32-max" }
+      ];
+    case "sfixed32":
+      return [
+        { value: 0, label: "zero" },
+        { value: descriptor.field.id * 4000 + 99, label: "mid-pos" },
+        { value: -descriptor.field.id * 4000 - 99, label: "mid-neg" },
+        { value: 2147483647, label: "max" },
+        { value: -2147483648, label: "min" }
+      ];
+    case "fixed64":
+      return [
+        { value: "0", label: "zero" },
+        { value: "123456789", label: "mid" },
+        { value: "4294967296", label: "uint32-plus-one" },
+        { value: "18446744073709551615", label: "uint64-max" }
+      ];
+    case "sfixed64":
+      return [
+        { value: "0", label: "zero" },
+        { value: "9876543210", label: "mid-pos" },
+        { value: "-9876543210", label: "mid-neg" },
+        { value: "9223372036854775807", label: "max" },
+        { value: "-9223372036854775808", label: "min" }
+      ];
     case "enum":
       return buildEnumSamples(descriptor);
     case "bytes":
@@ -272,6 +322,16 @@ function buildRepeatedSamples(descriptor: SimpleScalarMessageDescriptor): Array<
       return [{ value: [false, true, true], label: "packed" }];
     case "float":
       return [{ value: [0, 1.25, -2.5], label: "packed" }];
+    case "double":
+      return [{ value: [0, 1.5, -3.75], label: "packed" }];
+    case "fixed32":
+      return [{ value: [0, descriptor.field.id * 200 + 7, 4294967295], label: "packed" }];
+    case "sfixed32":
+      return [{ value: [0, descriptor.field.id * 150 + 11, -descriptor.field.id * 150 - 11], label: "packed" }];
+    case "fixed64":
+      return [{ value: ["0", "4294967296", "1099511627776"], label: "packed" }];
+    case "sfixed64":
+      return [{ value: ["0", "2147483647", "-2147483648"], label: "packed" }];
     case "enum":
       return [{ value: buildEnumSampleValues(descriptor, 3), label: "packed" }];
     case "string":
@@ -436,11 +496,16 @@ function normalizePayloadValue(descriptor: SimpleScalarMessageDescriptor, sample
       case "int64":
       case "uint64":
       case "sint64":
+      case "fixed64":
+      case "sfixed64":
         return arrayValues.map((item) => String(item));
       case "int32":
       case "uint32":
       case "sint32":
+      case "fixed32":
+      case "sfixed32":
       case "float":
+      case "double":
         return arrayValues.map((item) => Number(item));
       case "bool":
         return arrayValues.map((item) => normalizeBoolSample(item as string | number | boolean));
@@ -458,11 +523,16 @@ function normalizePayloadValue(descriptor: SimpleScalarMessageDescriptor, sample
     case "int64":
     case "uint64":
     case "sint64":
+    case "fixed64":
+    case "sfixed64":
       return sampleValue;
     case "float":
+    case "double":
     case "int32":
     case "uint32":
     case "sint32":
+    case "fixed32":
+    case "sfixed32":
       return Number(sampleValue);
     case "bool":
       return normalizeBoolSample(sampleValue as string | number | boolean);
@@ -514,6 +584,21 @@ function buildAlternateEncodings(descriptor: SimpleScalarMessageDescriptor, samp
       break;
     case "float":
       arrayValues.forEach((value) => writer.uint32(tag).float(Number(value)));
+      break;
+    case "double":
+      arrayValues.forEach((value) => writer.uint32(tag).double(Number(value)));
+      break;
+    case "fixed32":
+      arrayValues.forEach((value) => writer.uint32(tag).fixed32(Number(value)));
+      break;
+    case "sfixed32":
+      arrayValues.forEach((value) => writer.uint32(tag).sfixed32(Number(value)));
+      break;
+    case "fixed64":
+      arrayValues.forEach((value) => writer.uint32(tag).fixed64(String(value)));
+      break;
+    case "sfixed64":
+      arrayValues.forEach((value) => writer.uint32(tag).sfixed64(String(value)));
       break;
     case "enum":
       arrayValues.forEach((value) => writer.uint32(tag).int32(normalizeEnumSample(descriptor, value)));

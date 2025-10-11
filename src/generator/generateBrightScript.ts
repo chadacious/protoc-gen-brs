@@ -181,6 +181,26 @@ const MESSAGE_TEMPLATE_MAP: Record<
     single: "messages/float.brs.tmpl",
     repeated: "messages/repeated/float.brs.tmpl"
   },
+  double: {
+    single: "messages/double.brs.tmpl",
+    repeated: "messages/repeated/double.brs.tmpl"
+  },
+  fixed32: {
+    single: "messages/fixed32.brs.tmpl",
+    repeated: "messages/repeated/fixed32.brs.tmpl"
+  },
+  sfixed32: {
+    single: "messages/sfixed32.brs.tmpl",
+    repeated: "messages/repeated/sfixed32.brs.tmpl"
+  },
+  fixed64: {
+    single: "messages/fixed64.brs.tmpl",
+    repeated: "messages/repeated/fixed64.brs.tmpl"
+  },
+  sfixed64: {
+    single: "messages/sfixed64.brs.tmpl",
+    repeated: "messages/repeated/sfixed64.brs.tmpl"
+  },
   enum: {
     single: "messages/enum.brs.tmpl",
     repeated: "messages/repeated/enum.brs.tmpl"
@@ -203,6 +223,11 @@ const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
   bool: 0,
   bytes: 2,
   float: 5,
+  double: 1,
+  fixed32: 5,
+  sfixed32: 5,
+  fixed64: 1,
+  sfixed64: 1,
   enum: 0
 };
 

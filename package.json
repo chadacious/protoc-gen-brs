@@ -15,7 +15,7 @@
     "generate:baseline": "ts-node --project tsconfig.json src/cli.ts baseline",
     "dev": "ts-node --project tsconfig.json src/cli.ts --help",
     "lint": "echo \"TODO: add linting\"",
-    "test": "ts-node --project tsconfig.json tests/uintTypes.test.ts",
+    "test": "ts-node --project tsconfig.json tests/uintTypes.test.ts && ts-node --project tsconfig.json tests/scalarParity.test.ts",
     "roku:test": "node scripts/runOnDevice.mjs"
   },
   "keywords": [
@@ -38,6 +38,7 @@
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^24.7.0",
     "@types/yargs": "^17.0.33",
+    "brs": "^0.45.0",
     "brighterscript": "^0.70.1",
     "roku-deploy": "^3.8.0",
     "rimraf": "^6.0.1",

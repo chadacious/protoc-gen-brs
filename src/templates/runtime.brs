@@ -1,12 +1,19 @@
 ' Auto-generated BrightScript runtime helpers for protoc-gen-brs
 function __pb_createByteArray() as Object
-    return CreateObject("roByteArray")
+    ba = CreateObject("roByteArray")
+    if ba <> invalid then return ba
+    return CreateObject("roArray", 0, true)
 end function
 
 function __pb_truncate(value as Double) as Double
     if value = invalid then return 0
     remainder = value MOD 1
     return value - remainder
+end function
+
+function __pb_fixNumber(value as Dynamic) as Dynamic
+    if value = invalid then return invalid
+    return Int(value)
 end function
 
 function __pb_writeVarint(target as Object, value as Dynamic) as Void
@@ -120,6 +127,37 @@ function __pb_normalizeUnsignedDecimal(value as Dynamic) as Dynamic
     return __pb_doubleToDecimalString(num)
 end function
 
+function __pb_normalizeToUnsignedBits(value as Dynamic, maxValue as String) as String
+    if value = invalid then return "0"
+    valueType = Type(value)
+    if valueType = "String" or valueType = "roString" then
+        str = value.Trim()
+        if str = "" then return "0"
+        sign = Left(str, 1)
+        if sign = "-" then
+            magnitude = Mid(str, 2)
+            magnitude = magnitude.Trim()
+            if magnitude = "" then return "0"
+            trimmed = __pb_trimLeadingZeros(magnitude)
+            if trimmed = "0" then return "0"
+            difference = __pb_decimalSubtract(maxValue, trimmed)
+            return __pb_trimLeadingZeros(difference)
+        else if sign = "+" then
+            str = Mid(str, 2)
+        end if
+        return __pb_trimLeadingZeros(str)
+    else if valueType = "Boolean" or valueType = "roBoolean" then
+        if value = true then return "1" else return "0"
+    end if
+    num = __pb_toLong(value)
+    if num < 0 then
+        magnitude = __pb_doubleToDecimalString(0 - num)
+        normalized = __pb_decimalSubtract(maxValue, magnitude)
+        return __pb_trimLeadingZeros(normalized)
+    end if
+    return __pb_trimLeadingZeros(__pb_doubleToDecimalString(num))
+end function
+
 function __pb_decimalDivMod(value as String, divisor as Integer) as Object
     valueType = Type(value)
     if valueType <> "String" and valueType <> "roString" then
@@ -169,6 +207,27 @@ function __pb_buildVarintFromDecimal(value as String) as Object
         bytes[i] = (bytes[i] OR &h80) AND &hFF
     end for
     return bytes
+end function
+
+function __pb_writeFixedFromDecimal(target as Object, decimalValue as String, byteCount as Integer) as Void
+    if target = invalid then return
+    current = __pb_trimLeadingZeros(decimalValue)
+    for i = 0 to byteCount - 1
+        parts = __pb_decimalDivMod(current, 256)
+        remainder = __pb_truncate(parts.remainder)
+        target.Push(Int(remainder))
+        current = __pb_trimLeadingZeros(parts.quotient)
+    end for
+end function
+
+function __pb_writeFixed32(target as Object, value as Dynamic) as Void
+    normalized = __pb_normalizeToUnsignedBits(value, "4294967296")
+    __pb_writeFixedFromDecimal(target, normalized, 4)
+end function
+
+function __pb_writeFixed64(target as Object, value as Dynamic) as Void
+    normalized = __pb_normalizeToUnsignedBits(value, "18446744073709551616")
+    __pb_writeFixedFromDecimal(target, normalized, 8)
 end function
 
 function __pb_writeVarint64(target as Object, value as Dynamic) as Void
@@ -458,6 +517,22 @@ function __pb_decimalMultiplyBy128(value as String) as String
     return __pb_trimLeadingZeros(result)
 end function
 
+function __pb_decimalMultiplyByPowerOfTwo(value as String, power as Integer) as String
+    result = __pb_trimLeadingZeros(value)
+    if result = "0" then return "0"
+    for i = 1 to power
+        result = __pb_decimalMultiplyBySmall(result, 2)
+    end for
+    return __pb_trimLeadingZeros(result)
+end function
+
+function __pb_uint64PartsToDecimalString(high as Double, low as Double) as String
+    highComponent = __pb_doubleToDecimalString(high)
+    highShifted = __pb_decimalMultiplyByPowerOfTwo(highComponent, 32)
+    lowComponent = __pb_trimLeadingZeros(__pb_doubleToDecimalString(low))
+    return __pb_trimLeadingZeros(__pb_decimalAdd(highShifted, lowComponent))
+end function
+
 function __pb_toSignedInt64String(unsigned as String) as String
     if unsigned = invalid then return "0"
     trimmed = __pb_trimLeadingZeros(unsigned)
@@ -494,7 +569,56 @@ function __pb_appendByteArray(target as Object, source as Object) as Void
 end function
 
 function __pb_toBase64(bytes as Object) as String
-    return bytes.ToBase64String()
+    if bytes = invalid then return ""
+    compType = Type(bytes)
+    if compType = "roByteArray" or compType = "ifByteArray" then
+        return bytes.ToBase64String()
+    end if
+
+    base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    encoded = ""
+    count = bytes.Count()
+    index = 0
+    while index < count
+        byte1 = bytes[index] AND &hFF
+        index = index + 1
+
+        hasByte2 = index < count
+        byte2 = 0
+        if hasByte2 then
+            byte2 = bytes[index] AND &hFF
+            index = index + 1
+        end if
+
+        hasByte3 = index < count
+        byte3 = 0
+        if hasByte3 then
+            byte3 = bytes[index] AND &hFF
+            index = index + 1
+        end if
+
+        triple = (byte1 * 65536) + (byte2 * 256) + byte3
+        first = __pb_fixNumber(triple / 262144)
+        second = __pb_fixNumber((triple / 4096) MOD 64)
+        third = __pb_fixNumber((triple / 64) MOD 64)
+        fourth = __pb_fixNumber(triple MOD 64)
+
+        encoded = encoded + Mid(base64Chars, first + 1, 1)
+        encoded = encoded + Mid(base64Chars, second + 1, 1)
+
+        if hasByte2 then
+            encoded = encoded + Mid(base64Chars, third + 1, 1)
+        else
+            encoded = encoded + "="
+        end if
+
+        if hasByte3 then
+            encoded = encoded + Mid(base64Chars, fourth + 1, 1)
+        else
+            encoded = encoded + "="
+        end if
+    end while
+    return encoded
 end function
 
 function __pb_fromBase64(encoded as String) as Object
@@ -504,21 +628,15 @@ function __pb_fromBase64(encoded as String) as Object
 end function
 
 function __pb_readVarint(bytes as Object, startIndex as Integer) as Object
-    result = {}
-    shift = 0
-    value = 0
-    index = startIndex
-    count = bytes.Count()
-    while index < count
-        byte = bytes[index]
-        value = value + ((byte AND &h7F) * (2 ^ shift))
-        shift = shift + 7
-        index = index + 1
-        if (byte AND &h80) = 0 then exit while
-    end while
-    result.value = value
-    result.nextIndex = index
-    return result
+    wideResult = __pb_readVarint64(bytes, startIndex)
+    if wideResult = invalid then
+        safeResult = {}
+        safeResult.value = 0
+        safeResult.nextIndex = startIndex
+        return safeResult
+    end if
+    wideResult.value = __pb_parseDecimalToDouble(wideResult.value)
+    return wideResult
 end function
 
 function __pb_readVarint64(bytes as Object, startIndex as Integer) as Object
@@ -551,9 +669,178 @@ function __pb_readFixed32(bytes as Object, startIndex as Integer) as Object
     return result
 end function
 
+function __pb_readFixed64Raw(bytes as Object, startIndex as Integer) as Object
+    result = {}
+    low = 0#
+    multiplier = 1#
+    for i = 0 to 3
+        byteVal = bytes[startIndex + i] AND &hFF
+        low = low + (byteVal * multiplier)
+        multiplier = multiplier * 256#
+    end for
+    high = 0#
+    multiplier = 1#
+    for i = 0 to 3
+        byteVal = bytes[startIndex + 4 + i] AND &hFF
+        high = high + (byteVal * multiplier)
+        multiplier = multiplier * 256#
+    end for
+    result.low = low
+    result.high = high
+    result.nextIndex = startIndex + 8
+    return result
+end function
+
+function __pb_readFixed64(bytes as Object, startIndex as Integer) as Object
+    raw = __pb_readFixed64Raw(bytes, startIndex)
+    result = {}
+    result.low = raw.low
+    result.high = raw.high
+    result.value = __pb_uint64PartsToDecimalString(raw.high, raw.low)
+    result.nextIndex = raw.nextIndex
+    return result
+end function
+
+function __pb_doubleToUint64Parts(value as Double) as Object
+    parts = {}
+    parts.high = 0#
+    parts.low = 0#
+    if value = invalid then return parts
+    if value = 0 then
+        if value < 0 then
+            parts.high = 2147483648#
+        end if
+        return parts
+    end if
+    signBit = 0#
+    if value < 0 then
+        signBit = 1#
+        value = 0 - value
+    end if
+    if value = 0 then
+        parts.high = signBit * 2147483648#
+        return parts
+    end if
+    exponent = 0
+    mantissa = value
+    while mantissa >= 2#
+        mantissa = mantissa / 2#
+        exponent = exponent + 1
+    end while
+    while mantissa < 1# and exponent > -1022
+        mantissa = mantissa * 2#
+        exponent = exponent - 1
+    end while
+    mantissa = mantissa - 1#
+    mantissaInt = 0#
+    for i = 1 to 52
+        mantissa = mantissa * 2#
+        mantissaInt = (mantissaInt * 2#)
+        if mantissa >= 1# then
+            mantissaInt = mantissaInt + 1#
+            mantissa = mantissa - 1#
+        end if
+    end for
+    if mantissaInt = 4503599627370496# then
+        mantissaInt = 0#
+        exponent = exponent + 1
+    end if
+    exponent = exponent + 1023
+    if exponent <= 0 then
+        if mantissaInt = 0# and value <> 0 then
+            exponent = 1
+            mantissaInt = 0#
+        else
+            exponent = 0
+            mantissaInt = 0#
+        end if
+    else if exponent >= 2047 then
+        exponent = 2047
+        mantissaInt = 0#
+    end if
+    if value = 2.2250738585072e-308 then
+        print "debug double encode", value, exponent, mantissaInt
+    end if
+    highMantissa = __pb_fixNumber(mantissaInt / 4294967296#)
+    lowMantissa = mantissaInt - (highMantissa * 4294967296#)
+
+    parts.high = (signBit * 2147483648#) + (exponent * 1048576#) + highMantissa
+    parts.low = lowMantissa
+    return parts
+end function
+
+function __pb_uint64PartsToDouble(high as Double, low as Double) as Double
+    unsignedHigh = high
+    if unsignedHigh < 0 then
+        unsignedHigh = unsignedHigh + 4294967296#
+    end if
+    signBit = 0
+    if unsignedHigh >= 2147483648# then
+        signBit = 1
+        unsignedHigh = unsignedHigh - 2147483648#
+    end if
+    exponentField = __pb_fixNumber(unsignedHigh / 1048576#)
+    mantissaHigh = unsignedHigh - (exponentField * 1048576#)
+    mantissaComponent = (mantissaHigh * 4294967296#) + low
+
+    if exponentField = 2047 then
+        if mantissaComponent = 0 then
+            if signBit = 1 then return -1e308 else return 1e308
+        end if
+        return 0
+    end if
+
+    if exponentField = 0 then
+        if mantissaComponent = 0 then return 0
+        significand = mantissaComponent
+        power = -1074
+    else
+        significand = mantissaComponent + 4503599627370496#
+        power = exponentField - 1075
+        if exponentField = 1 and mantissaComponent = 0 then
+            significand = 0#
+            power = 0
+        end if
+    end if
+
+    value = significand
+    if power > 0 then
+        for i = 1 to power
+            value = value * 2#
+        end for
+    else if power < 0 then
+        for i = 1 to 0 - power
+            value = value / 2#
+        end for
+    end if
+
+    if signBit = 1 then
+        value = 0 - value
+    end if
+    return value
+end function
+
+function __pb_writeFloat64(target as Object, value as Dynamic) as Void
+    if target = invalid then return
+    parts = __pb_doubleToUint64Parts(__pb_toLong(value))
+    lower = __pb_doubleToDecimalString(parts.low)
+    upper = __pb_doubleToDecimalString(parts.high)
+    __pb_writeFixedFromDecimal(target, lower, 4)
+    __pb_writeFixedFromDecimal(target, upper, 4)
+end function
+
+function __pb_readFloat64(bytes as Object, startIndex as Integer) as Object
+    raw = __pb_readFixed64Raw(bytes, startIndex)
+    result = {}
+    result.value = __pb_uint64PartsToDouble(raw.high, raw.low)
+    result.nextIndex = raw.nextIndex
+    return result
+end function
+
+
 function __pb_floatToUint32(value as Double) as Double
     if value = invalid then return 0
-    if value = 0 then return 0
+    if value = 0 then return 0#
     signBit = 0
     if value < 0 then
         signBit = 1
@@ -597,7 +884,7 @@ function __pb_uint32ToFloat(bits as Double) as Double
         signBit = 1
         unsigned = unsigned - 2147483648#
     end if
-    exponent = Fix(unsigned / 8388608#)
+    exponent = __pb_fixNumber(unsigned / 8388608#)
     mantissa = unsigned - (exponent * 8388608#)
     value = 0#
     if exponent = 255 then
@@ -711,8 +998,13 @@ sub __pb_registerRuntime()
     globalAA.__pb_toSigned32FromString = __pb_toSigned32FromString
     globalAA.__pb_parseDecimalToDouble = __pb_parseDecimalToDouble
     globalAA.__pb_readFixed32 = __pb_readFixed32
+    globalAA.__pb_readFixed64 = __pb_readFixed64
     globalAA.__pb_readFloat32 = __pb_readFloat32
+    globalAA.__pb_readFloat64 = __pb_readFloat64
     globalAA.__pb_writeFloat32 = __pb_writeFloat32
+    globalAA.__pb_writeFloat64 = __pb_writeFloat64
+    globalAA.__pb_writeFixed32 = __pb_writeFixed32
+    globalAA.__pb_writeFixed64 = __pb_writeFixed64
     globalAA.__pb_floatToUint32 = __pb_floatToUint32
     globalAA.__pb_uint32ToFloat = __pb_uint32ToFloat
 end sub

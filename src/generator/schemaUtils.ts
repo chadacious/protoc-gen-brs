@@ -1,6 +1,22 @@
 import { Namespace, Root, Type, Field, Enum } from "protobufjs";
 
-export type SupportedScalarType = "string" | "int32" | "uint32" | "sint32" | "int64" | "uint64" | "sint64" | "bool" | "bytes" | "float" | "enum";
+export type SupportedScalarType =
+  | "string"
+  | "int32"
+  | "uint32"
+  | "sint32"
+  | "int64"
+  | "uint64"
+  | "sint64"
+  | "bool"
+  | "bytes"
+  | "float"
+  | "double"
+  | "fixed32"
+  | "sfixed32"
+  | "fixed64"
+  | "sfixed64"
+  | "enum";
 
 export interface SimpleScalarMessageDescriptor {
   type: Type;
@@ -21,7 +37,24 @@ export interface SimpleMessageFieldDescriptor {
   isRepeated: boolean;
 }
 
-const SUPPORTED_SCALAR_TYPES: SupportedScalarType[] = ["string", "int32", "uint32", "sint32", "int64", "uint64", "sint64", "bool", "bytes", "float", "enum"];
+const SUPPORTED_SCALAR_TYPES: SupportedScalarType[] = [
+  "string",
+  "int32",
+  "uint32",
+  "sint32",
+  "int64",
+  "uint64",
+  "sint64",
+  "bool",
+  "bytes",
+  "float",
+  "double",
+  "fixed32",
+  "sfixed32",
+  "fixed64",
+  "sfixed64",
+  "enum"
+];
 
 export function collectSimpleScalarMessages(root: Root): SimpleScalarMessageDescriptor[] {
   const messages = collectTypes(root);

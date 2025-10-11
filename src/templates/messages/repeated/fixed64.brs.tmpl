@@ -1,0 +1,74 @@
+' Auto-generated encoder/decoder for {{TYPE_NAME}}
+function {{TYPE_NAME}}Encode(message as Object) as String
+    source = invalid
+    if message <> invalid then
+        if GetInterface(message, "ifAssociativeArray") <> invalid then
+            source = message.Lookup("{{FIELD_NAME}}")
+        else
+            source = message.{{FIELD_NAME}}
+        end if
+    end if
+
+    packed = __pb_createByteArray()
+    if source <> invalid then
+        if GetInterface(source, "ifArray") <> invalid then
+            for each rawValue in source
+                __pb_writeFixed64(packed, rawValue)
+            end for
+        else
+            __pb_writeFixed64(packed, source)
+        end if
+    end if
+
+    bytes = __pb_createByteArray()
+    if packed.Count() > 0 then
+        __pb_writeVarint(bytes, {{PACKED_TAG}})
+        __pb_writeVarint(bytes, packed.Count())
+        __pb_appendByteArray(bytes, packed)
+    end if
+    return __pb_toBase64(bytes)
+end function
+
+function {{TYPE_NAME}}Decode(encoded as String) as Object
+    bytes = __pb_fromBase64(encoded)
+    cursor = 0
+    limit = bytes.Count()
+    message = {}
+    while cursor < limit
+        tagResult = __pb_readVarint(bytes, cursor)
+        cursor = tagResult.nextIndex
+        fieldNumber = Int(tagResult.value / 8)
+        wireType = tagResult.value AND &h07
+        if fieldNumber = {{FIELD_ID}} then
+            values = invalid
+            if GetInterface(message, "ifAssociativeArray") <> invalid and message.DoesExist("{{FIELD_NAME}}") then
+                values = message.{{FIELD_NAME}}
+            end if
+            if values = invalid then
+                values = CreateObject("roArray", 0, true)
+                message.{{FIELD_NAME}} = values
+            end if
+
+            if wireType = {{ELEMENT_WIRE_TYPE}} then
+                valueResult = __pb_readFixed64(bytes, cursor)
+                cursor = valueResult.nextIndex
+                values.Push(valueResult.value)
+            else if wireType = {{PACKED_WIRE_TYPE}} then
+                lengthResult = __pb_readVarint(bytes, cursor)
+                cursor = lengthResult.nextIndex
+                packEnd = cursor + lengthResult.value
+                while cursor < packEnd
+                    valueResult = __pb_readFixed64(bytes, cursor)
+                    cursor = valueResult.nextIndex
+                    values.Push(valueResult.value)
+                end while
+            else
+                exit while
+            end if
+        else
+            exit while
+        end if
+    end while
+    return message
+end function
+
