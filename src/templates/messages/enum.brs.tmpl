@@ -20,6 +20,7 @@ function {{TYPE_NAME}}Encode(message as Object) as String
     bytes = __pb_createByteArray()
     __pb_writeVarint(bytes, {{TAG}})
     __pb_writeVarint(bytes, numericValue)
+    __pb_appendUnknownFields(bytes, message)
     return __pb_toBase64(bytes)
 end function
 
@@ -52,6 +53,7 @@ function {{TYPE_NAME}}Decode(encoded as String) as Object
     limit = bytes.Count()
     message = {}
     while cursor < limit
+        tagStart = cursor
         tagResult = __pb_readVarint(bytes, cursor)
         cursor = tagResult.nextIndex
         fieldNumber = Int(tagResult.value / 8)
@@ -62,7 +64,9 @@ function {{TYPE_NAME}}Decode(encoded as String) as Object
             numericValue = __pb_toSigned32FromString(valueResult.value)
             message.{{FIELD_NAME}} = {{TYPE_NAME}}_enumName(numericValue)
         else
-            exit while
+            nextIndex = __pb_handleUnknownField(message, bytes, tagStart)
+            if nextIndex <= tagStart then exit while
+            cursor = nextIndex
         end if
     end while
     return message
@@ -91,4 +95,3 @@ function {{TYPE_NAME}}_getEnumNames() as Object
     if globalAA <> invalid then globalAA[key] = table
     return table
 end function
-

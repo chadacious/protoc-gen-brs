@@ -939,6 +939,18 @@ function __pb_readBytes(bytes as Object, startIndex as Integer, length as Intege
     return slice
 end function
 
+function __pb_sliceBytes(bytes as Object, startIndex as Integer, endIndex as Integer) as Object
+    slice = __pb_createByteArray()
+    if bytes = invalid then return slice
+    count = bytes.Count()
+    if endIndex > count then endIndex = count
+    if startIndex < 0 then startIndex = 0
+    for i = startIndex to endIndex - 1
+        slice.Push(bytes[i])
+    end for
+    return slice
+end function
+
 function __pb_byteArrayToBase64(bytes as Object) as String
     if bytes = invalid then return ""
     return bytes.ToBase64String()
@@ -964,6 +976,83 @@ function __pb_toDecimalString(value as Double) as String
     return __pb_doubleToDecimalString(value)
 end function
 
+function __pb_skipUnknownField(bytes as Object, startIndex as Integer) as Object
+    result = {}
+    if bytes = invalid then
+        result.nextIndex = startIndex
+        return result
+    end if
+    tagResult = __pb_readVarint(bytes, startIndex)
+    if tagResult = invalid then
+        result.nextIndex = startIndex
+        return result
+    end if
+    cursor = tagResult.nextIndex
+    wireType = tagResult.value AND &h07
+    if wireType = 0 then
+        valueResult = __pb_readVarint(bytes, cursor)
+        if valueResult = invalid then
+            result.nextIndex = startIndex
+            return result
+        end if
+        cursor = valueResult.nextIndex
+    else if wireType = 1 then
+        cursor = cursor + 8
+    else if wireType = 2 then
+        lengthResult = __pb_readVarint(bytes, cursor)
+        if lengthResult = invalid then
+            result.nextIndex = startIndex
+            return result
+        end if
+        cursor = lengthResult.nextIndex + lengthResult.value
+    else if wireType = 5 then
+        cursor = cursor + 4
+    else
+        result.nextIndex = startIndex
+        return result
+    end if
+    if cursor > bytes.Count() then cursor = bytes.Count()
+    result.nextIndex = cursor
+    result.raw = __pb_sliceBytes(bytes, startIndex, cursor)
+    return result
+end function
+
+function __pb_storeUnknownField(message as Object, rawBytes as Object) as Void
+    if message = invalid then return
+    if GetInterface(message, "ifAssociativeArray") = invalid then return
+    unknown = invalid
+    if message.DoesExist("__pbUnknown") then
+        unknown = message.__pbUnknown
+    end if
+    if unknown = invalid then
+        unknown = CreateObject("roArray", 0, true)
+        message.__pbUnknown = unknown
+    end if
+    base64 = __pb_byteArrayToBase64(rawBytes)
+    unknown.Push(base64)
+end function
+
+function __pb_appendUnknownFields(target as Object, message as Object) as Void
+    if target = invalid or message = invalid then return
+    if GetInterface(message, "ifAssociativeArray") = invalid then return
+    if message.DoesExist("__pbUnknown") = false then return
+    unknown = message.__pbUnknown
+    if GetInterface(unknown, "ifArray") = invalid then return
+    for each entry in unknown
+        chunk = __pb_fromBase64(entry)
+        __pb_appendByteArray(target, chunk)
+    end for
+end function
+
+function __pb_handleUnknownField(message as Object, bytes as Object, tagStart as Integer) as Integer
+    skipResult = __pb_skipUnknownField(bytes, tagStart)
+    if skipResult = invalid then return tagStart
+    nextIndex = skipResult.nextIndex
+    if nextIndex <= tagStart then return tagStart
+    __pb_storeUnknownField(message, skipResult.raw)
+    return nextIndex
+end function
+
 sub __pb_registerRuntime()
     globalAA = GetGlobalAA()
     if globalAA = invalid then return
@@ -978,6 +1067,7 @@ sub __pb_registerRuntime()
     globalAA.__pb_readString = __pb_readString
     globalAA.__pb_readBytes = __pb_readBytes
     globalAA.__pb_byteArrayToBase64 = __pb_byteArrayToBase64
+    globalAA.__pb_sliceBytes = __pb_sliceBytes
     globalAA.__pb_toLong = __pb_toLong
     globalAA.__pb_toDecimalString = __pb_toDecimalString
     globalAA.__pb_truncate = __pb_truncate
@@ -1000,4 +1090,8 @@ sub __pb_registerRuntime()
     globalAA.__pb_writeFixed64 = __pb_writeFixed64
     globalAA.__pb_floatToUint32 = __pb_floatToUint32
     globalAA.__pb_uint32ToFloat = __pb_uint32ToFloat
+    globalAA.__pb_skipUnknownField = __pb_skipUnknownField
+    globalAA.__pb_storeUnknownField = __pb_storeUnknownField
+    globalAA.__pb_appendUnknownFields = __pb_appendUnknownFields
+    globalAA.__pb_handleUnknownField = __pb_handleUnknownField
 end sub

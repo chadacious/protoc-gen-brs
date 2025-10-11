@@ -39,6 +39,7 @@ function {{TYPE_NAME}}Encode(message as Object) as String
             end for
         end if
     end if
+    __pb_appendUnknownFields(bytes, message)
     return __pb_toBase64(bytes)
 end function
 
@@ -48,6 +49,7 @@ function {{TYPE_NAME}}Decode(encoded as String) as Object
     limit = bytes.Count()
     message = {}
     while cursor < limit
+        tagStart = cursor
         tagResult = __pb_readVarint(bytes, cursor)
         cursor = tagResult.nextIndex
         fieldNumber = Int(tagResult.value / 8)
@@ -76,10 +78,14 @@ function {{TYPE_NAME}}Decode(encoded as String) as Object
                     values.Push(__pb_toSignedInt64String(valueResult.value))
                 end while
             else
-                exit while
+                nextIndex = __pb_handleUnknownField(message, bytes, tagStart)
+                if nextIndex <= tagStart then exit while
+                cursor = nextIndex
             end if
         else
-            exit while
+            nextIndex = __pb_handleUnknownField(message, bytes, tagStart)
+            if nextIndex <= tagStart then exit while
+            cursor = nextIndex
         end if
     end while
     return message
