@@ -332,9 +332,9 @@ function __pb_toSigned32FromString(value as String) as Double
 end function
 
 function __pb_parseDecimalToDouble(value as String) as Double
-    if value = invalid then return 0
+    if value = invalid then return 0#
     str = value.Trim()
-    if str = "" then return 0
+    if str = "" then return 0#
     sign = 1#
     if Left(str, 1) = "-" then
         sign = -1#
@@ -343,7 +343,7 @@ function __pb_parseDecimalToDouble(value as String) as Double
         str = Mid(str, 2)
     end if
     digitsStr = __pb_trimLeadingZeros(str)
-    if digitsStr = "0" then return 0
+    if digitsStr = "0" then return 0#
     result = 0#
     length = Len(digitsStr)
     for i = 0 to length - 1
@@ -758,9 +758,6 @@ function __pb_doubleToUint64Parts(value as Double) as Object
         exponent = 2047
         mantissaInt = 0#
     end if
-    if value = 2.2250738585072e-308 then
-        print "debug double encode", value, exponent, mantissaInt
-    end if
     highMantissa = __pb_fixNumber(mantissaInt / 4294967296#)
     lowMantissa = mantissaInt - (highMantissa * 4294967296#)
 
@@ -787,20 +784,16 @@ function __pb_uint64PartsToDouble(high as Double, low as Double) as Double
         if mantissaComponent = 0 then
             if signBit = 1 then return -1e308 else return 1e308
         end if
-        return 0
+        return 0#
     end if
 
     if exponentField = 0 then
-        if mantissaComponent = 0 then return 0
+        if mantissaComponent = 0 then return 0#
         significand = mantissaComponent
         power = -1074
     else
         significand = mantissaComponent + 4503599627370496#
         power = exponentField - 1075
-        if exponentField = 1 and mantissaComponent = 0 then
-            significand = 0#
-            power = 0
-        end if
     end if
 
     value = significand

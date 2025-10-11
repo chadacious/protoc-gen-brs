@@ -697,7 +697,27 @@ function formatBrsValue(value: unknown): string {
     return value ? "true" : "false";
   }
   if (typeof value === "number") {
-    return value.toString();
+    return formatNumericValue(value);
   }
   return `"${escapeBrsString(String(value))}"`;
+}
+
+function formatNumericValue(value: number): string {
+  if (!Number.isFinite(value)) {
+    return value.toString();
+  }
+  if (value !== 0 && Math.abs(value) < 1e-300) {
+    const { high, low } = float64ToUint32Parts(value);
+    return `__pb_uint64PartsToDouble(${high}, ${low})`;
+  }
+  return value.toString();
+}
+
+function float64ToUint32Parts(value: number): { high: number; low: number } {
+  const buffer = new ArrayBuffer(8);
+  const view = new DataView(buffer);
+  view.setFloat64(0, value, true);
+  const low = view.getUint32(0, true);
+  const high = view.getUint32(4, true);
+  return { high, low };
 }
