@@ -2,6 +2,13 @@ syntax = "proto3";
 
 package samples;
 
+enum SampleEnum {
+  SAMPLE_ENUM_UNKNOWN = 0;
+  SAMPLE_ENUM_FIRST = 1;
+  SAMPLE_ENUM_SECOND = 2;
+  SAMPLE_ENUM_THIRD = 3;
+}
+
 message SimpleMessage {
   string value = 1;
 }
@@ -72,4 +79,12 @@ message PackedBoolMessage {
 
 message PackedFloatMessage {
   repeated float values = 1;
+}
+
+message EnumMessage {
+  SampleEnum choice = 1;
+}
+
+message PackedEnumMessage {
+  repeated SampleEnum choices = 1;
 }

@@ -157,6 +157,10 @@ const MESSAGE_TEMPLATE_MAP: Record<
   float: {
     single: "messages/float.brs.tmpl",
     repeated: "messages/repeated/float.brs.tmpl"
+  },
+  enum: {
+    single: "messages/enum.brs.tmpl",
+    repeated: "messages/repeated/enum.brs.tmpl"
   }
 };
 
@@ -170,11 +174,54 @@ const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
   sint64: 0,
   bool: 0,
   bytes: 2,
-  float: 5
+  float: 5,
+  enum: 0
 };
 
 function renderRuntimeModule(): string {
   return loadTemplate("runtime.brs");
+}
+
+
+function buildEnumValueAssignments(descriptor: SimpleScalarMessageDescriptor): string {
+  const enumInfo = descriptor.enumInfo;
+  if (!enumInfo) {
+    return "";
+  }
+  const lines: string[] = [];
+  const entries = Object.entries(enumInfo.values).sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [name, value] of entries) {
+    lines.push(`    table["${name}"] = ${value}`);
+  }
+  return lines.join("\n");
+}
+
+function buildEnumNameAssignments(descriptor: SimpleScalarMessageDescriptor): string {
+  const enumInfo = descriptor.enumInfo;
+  if (!enumInfo) {
+    return "";
+  }
+  const lines: string[] = [];
+  const entries = Object.entries(enumInfo.valuesById).sort((a, b) => Number(a[0]) - Number(b[0]));
+  for (const [id, name] of entries) {
+    lines.push(`    table["${id}"] = "${name}"`);
+  }
+  return lines.join("\n");
+}
+
+function getEnumDefaultKey(descriptor: SimpleScalarMessageDescriptor): string {
+  const enumInfo = descriptor.enumInfo;
+  if (!enumInfo) {
+    return "";
+  }
+  if (enumInfo.valuesById.hasOwnProperty("0")) {
+    return enumInfo.valuesById["0"];
+  }
+  const firstKey = Object.keys(enumInfo.valuesById)[0];
+  if (firstKey) {
+    return enumInfo.valuesById[firstKey];
+  }
+  return "";
 }
 
 
@@ -207,6 +254,12 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
     context.PACKED_TAG = packedTag.toString();
     context.PACKED_WIRE_TYPE = "2";
     context.ELEMENT_WIRE_TYPE = wireType.toString();
+  }
+
+  if (descriptor.scalarType === "enum" && descriptor.enumInfo) {
+    context.ENUM_VALUE_ASSIGNMENTS = buildEnumValueAssignments(descriptor);
+    context.ENUM_NAME_ASSIGNMENTS = buildEnumNameAssignments(descriptor);
+    context.ENUM_DEFAULT_KEY = getEnumDefaultKey(descriptor);
   }
 
   return renderTemplate(template, context);

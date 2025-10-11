@@ -19,25 +19,28 @@ const SUPPORTED_SCALAR_TYPES: SupportedScalarType[] = ["string", "int32", "uint3
 export function collectSimpleScalarMessages(root: Root): SimpleScalarMessageDescriptor[] {
   const messages = collectTypes(root);
   return messages
-    .map((type) => {
-      const fields = type.fieldsArray;
-      if (fields.length !== 1) {
-        return undefined;
-      }
-      const field = fields[0];
-      if (!isSupportedScalarField(field)) {
-        return undefined;
-      }
-      const enumInfo = extractEnumInfo(field);
-      return {
-        type,
-        field,
-        scalarType: enumInfo ? "enum" : (field.type as SupportedScalarType),
-        isRepeated: field.repeated === true,
-        enumInfo
-      };
-    })
-    .filter((descriptor): descriptor is SimpleScalarMessageDescriptor => Boolean(descriptor));
+    .map((type) => createDescriptorForType(type))
+    .filter((descriptor): descriptor is SimpleScalarMessageDescriptor => descriptor !== undefined);
+}
+
+function createDescriptorForType(type: Type): SimpleScalarMessageDescriptor | undefined {
+  const fields = type.fieldsArray;
+  if (fields.length !== 1) {
+    return undefined;
+  }
+  const field = fields[0];
+  const enumInfo = extractEnumInfo(field);
+  if (!enumInfo && !isSupportedScalarField(field)) {
+    return undefined;
+  }
+  const scalarType: SupportedScalarType = enumInfo ? "enum" : (field.type as SupportedScalarType);
+  return {
+    type,
+    field,
+    scalarType,
+    isRepeated: field.repeated === true,
+    enumInfo
+  };
 }
 
 function collectTypes(namespace: Namespace | Root): Type[] {
@@ -56,6 +59,9 @@ function collectTypes(namespace: Namespace | Root): Type[] {
 }
 
 function isSupportedScalarField(field: Field): boolean {
+  if (!field.resolvedType && typeof field.resolve === "function") {
+    field.resolve();
+  }
   if (field.resolvedType instanceof Enum) {
     return true;
   }
@@ -63,6 +69,9 @@ function isSupportedScalarField(field: Field): boolean {
 }
 
 function extractEnumInfo(field: Field): SimpleScalarMessageDescriptor["enumInfo"] {
+  if (!field.resolvedType && typeof field.resolve === "function") {
+    field.resolve();
+  }
   const enumType = field.resolvedType;
   if (!(enumType instanceof Enum)) {
     return undefined;
@@ -75,7 +84,7 @@ function extractEnumInfo(field: Field): SimpleScalarMessageDescriptor["enumInfo"
   });
   const normalizedValuesById: Record<string, string> = {};
   Object.keys(valuesById).forEach((id) => {
-    normalizedValuesById[id] = valuesById[id];
+    normalizedValuesById[id] = valuesById[Number(id)];
   });
   return {
     name: enumType.name,

@@ -13,7 +13,8 @@ const PACKABLE_SCALAR_TYPES = new Set<SupportedScalarType>([
   "uint64",
   "sint64",
   "bool",
-  "float"
+  "float",
+  "enum"
 ]);
 
 const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
@@ -26,7 +27,8 @@ const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
   sint64: 0,
   bool: 0,
   bytes: 2,
-  float: 5
+  float: 5,
+  enum: 0
 };
 
 type SampleValue = string | number | boolean | Array<string | number | boolean>;
@@ -55,7 +57,7 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
       const encodedBuffer = descriptor.type.encode(payload).finish();
       const encodedBase64 = Buffer.from(encodedBuffer).toString("base64");
       const decodedMessage = descriptor.type.decode(encodedBuffer);
-      const decoded = descriptor.type.toObject(decodedMessage, { defaults: true, longs: String, bytes: String });
+      const decoded = descriptor.type.toObject(decodedMessage, { defaults: true, longs: String, bytes: String, enums: String });
       const alternateEncodings = buildAlternateEncodings(descriptor, sample.value);
 
       const baselineCase: BaselineCase = {
@@ -206,6 +208,8 @@ function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value:
         { value: 123456.789, label: "large" },
         { value: 1.17549435e-38, label: "min-normal" }
       ];
+    case "enum":
+      return buildEnumSamples(descriptor);
     case "bytes":
     default:
       return [
@@ -233,6 +237,8 @@ function buildRepeatedSamples(descriptor: SimpleScalarMessageDescriptor): Array<
       return [{ value: [false, true, true], label: "packed" }];
     case "float":
       return [{ value: [0, 1.25, -2.5], label: "packed" }];
+    case "enum":
+      return [{ value: buildEnumSampleValues(descriptor, 3), label: "packed" }];
     case "string":
       return [{ value: [`Sample-${descriptor.type.name}-a`, `Sample-${descriptor.type.name}-b`], label: "multi" }];
     case "bytes":
@@ -319,6 +325,39 @@ function buildUint64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ 
   return samples;
 }
 
+function buildEnumSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: SampleValue; label: string }> {
+  const enumInfo = descriptor.enumInfo;
+  if (!enumInfo) {
+    return [{ value: 0, label: "default" }];
+  }
+  const names = Object.keys(enumInfo.values);
+  if (names.length === 0) {
+    return [{ value: 0, label: "default" }];
+  }
+  const first = names[0];
+  const second = names.length > 1 ? names[1] : names[0];
+  return [
+    { value: first, label: "first" },
+    { value: second, label: "second" }
+  ];
+}
+
+function buildEnumSampleValues(descriptor: SimpleScalarMessageDescriptor, count: number): SampleValue {
+  const enumInfo = descriptor.enumInfo;
+  if (!enumInfo) {
+    return [0];
+  }
+  const names = Object.keys(enumInfo.values);
+  if (names.length === 0) {
+    return [0];
+  }
+  const values: string[] = [];
+  for (let i = 0; i < count; i++) {
+    values.push(names[i % names.length]);
+  }
+  return values;
+}
+
 function normalizePayloadValue(descriptor: SimpleScalarMessageDescriptor, sampleValue: SampleValue): unknown {
   if (descriptor.isRepeated) {
     const arrayValues = Array.isArray(sampleValue) ? sampleValue : [sampleValue];
@@ -335,7 +374,9 @@ function normalizePayloadValue(descriptor: SimpleScalarMessageDescriptor, sample
       case "float":
         return arrayValues.map((item) => Number(item));
       case "bool":
-        return arrayValues.map((item) => normalizeBoolSample(item));
+        return arrayValues.map((item) => normalizeBoolSample(item as string | number | boolean));
+      case "enum":
+        return arrayValues.map((item) => normalizeEnumSample(descriptor, item));
       case "string":
       default:
         return arrayValues.map((item) => String(item));
@@ -356,6 +397,8 @@ function normalizePayloadValue(descriptor: SimpleScalarMessageDescriptor, sample
       return Number(sampleValue);
     case "bool":
       return normalizeBoolSample(sampleValue as string | number | boolean);
+    case "enum":
+      return normalizeEnumSample(descriptor, sampleValue);
     case "string":
     default:
       return String(sampleValue);
@@ -403,6 +446,9 @@ function buildAlternateEncodings(descriptor: SimpleScalarMessageDescriptor, samp
     case "float":
       arrayValues.forEach((value) => writer.uint32(tag).float(Number(value)));
       break;
+    case "enum":
+      arrayValues.forEach((value) => writer.uint32(tag).int32(normalizeEnumSample(descriptor, value)));
+      break;
     default:
       return [];
   }
@@ -423,6 +469,25 @@ function normalizeBoolSample(value: string | number | boolean): boolean {
   }
   const lower = value.toLowerCase();
   return lower === "true" || lower === "1";
+}
+
+function normalizeEnumSample(descriptor: SimpleScalarMessageDescriptor, value: SampleValue): number {
+  const enumInfo = descriptor.enumInfo;
+  if (!enumInfo) {
+    return Number(value);
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+  const name = String(value).toUpperCase();
+  if (enumInfo.values.hasOwnProperty(name)) {
+    return enumInfo.values[name];
+  }
+  const parsed = Number(value);
+  if (!Number.isNaN(parsed)) {
+    return parsed;
+  }
+  return 0;
 }
 
 function buildSint64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: string; label: string }> {

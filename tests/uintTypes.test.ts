@@ -12,12 +12,20 @@ async function createProto(tempDir: string) {
     syntax = "proto3";
     package samples;
 
+    enum SampleEnum {
+      SAMPLE_ENUM_UNKNOWN = 0;
+      SAMPLE_ENUM_FIRST = 1;
+      SAMPLE_ENUM_SECOND = 2;
+    }
+
     message Int32Message { int32 value = 1; }
     message Uint32Message { uint32 value = 1; }
     message Uint64Message { uint64 value = 1; }
     message Sint32Message { sint32 value = 1; }
     message Sint64Message { sint64 value = 1; }
     message FloatMessage { float value = 1; }
+    message EnumMessage { SampleEnum choice = 1; }
+    message PackedEnumMessage { repeated SampleEnum choices = 1; }
     message PackedInt32Message { repeated int32 values = 1; }
     message PackedUint32Message { repeated uint32 values = 1; }
     message PackedBoolMessage { repeated bool values = 1; }
@@ -44,7 +52,9 @@ async function generateBrightScript(protoPath: string, outputDir: string) {
     packedInt32File: await readMessage("PackedInt32Message"),
     packedUint32File: await readMessage("PackedUint32Message"),
     packedBoolFile: await readMessage("PackedBoolMessage"),
-    packedFloatFile: await readMessage("PackedFloatMessage")
+    packedFloatFile: await readMessage("PackedFloatMessage"),
+    enumFile: await readMessage("EnumMessage"),
+    packedEnumFile: await readMessage("PackedEnumMessage")
   };
 }
 
@@ -62,7 +72,9 @@ async function run() {
     packedInt32File,
     packedUint32File,
     packedBoolFile,
-    packedFloatFile
+    packedFloatFile,
+    enumFile,
+    packedEnumFile
   } = await generateBrightScript(protoPath, outputDir);
 
   assert.ok(int32File.includes("__pb_writeVarint(bytes, 8)"), "int32 encode should emit field tag");
@@ -107,6 +119,15 @@ async function run() {
   assert.ok(packedFloatFile.includes("__pb_writeFloat32(packed"), "packed float encode should write float values");
   assert.ok(packedFloatFile.includes("else if wireType = 2 then"), "packed float decode should handle packed form");
   assert.ok(packedFloatFile.includes("values.Push(valueResult.value)"), "packed float decode should push unpacked values");
+
+  assert.ok(enumFile.includes("EnumMessageEnumValues"), "enum encode should declare value mapping");
+  assert.ok(enumFile.includes("EnumMessageEnumNames"), "enum decode should declare reverse mapping");
+  assert.ok(enumFile.includes("EnumMessage_normalizeEnum"), "enum encode should normalize string inputs");
+  assert.ok(enumFile.includes("__pb_writeVarint(bytes, 8)"), "enum encode should write varint tag");
+  assert.ok(enumFile.includes("message.choice = EnumMessage_enumName"), "enum decode should convert numbers to labels");
+
+  assert.ok(packedEnumFile.includes("__pb_writeVarint(packed"), "packed enum encode should write packed values");
+  assert.ok(packedEnumFile.includes("values.Push(PackedEnumMessage_enumName"), "packed enum decode should convert to labels");
 
   console.log("scalar generator tests passed.");
 }
