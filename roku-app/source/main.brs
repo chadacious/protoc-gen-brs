@@ -109,9 +109,131 @@ sub Main()
         print "  duration:  "; caseTimer.TotalMilliseconds(); " ms"
     end for
 
+    videoTestPassed = RunVideoPlaybackAbrParityTest(handlers)
+    if videoTestPassed = true then
+        passed = passed + 1
+    end if
+    total = total + 1
+
     print "Summary: "; passed; " of "; total; " cases passed."
     print "Total duration: "; runTimer.TotalMilliseconds(); " ms"
 end sub
+
+function RunVideoPlaybackAbrParityTest(handlers as Object) as Boolean
+    print "Verifying complex message via VideoPlaybackAbrRequest parity"
+    timer = CreateObject("roTimespan")
+    timer.Mark()
+
+    handler = invalid
+    if handlers <> invalid then
+        if handlers.DoesExist("VideoPlaybackAbrRequest") then
+            handler = handlers["VideoPlaybackAbrRequest"]
+        else if handlers.DoesExist("video_streaming.VideoPlaybackAbrRequest") then
+            handler = handlers["video_streaming.VideoPlaybackAbrRequest"]
+        end if
+    end if
+
+    if handler = invalid then
+        print "  FAIL"
+        print "    handler for VideoPlaybackAbrRequest not found"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+
+    sample = CreateVideoPlaybackAbrSample()
+    expectedEncoded = "CiCAAbgIqAG4CLABALgB8I+uAuABAJ0CAACAP8ACAvACABIMCIwBEJeNgKW7h5ADGi8KDAiMARCXjYClu4eQAxAAGP////8HIID7//8HKID7//8HMgsIABD/////BxjoB4IBDAiMARCXjYClu4eQA4oBDAiPAxCkwZ+wvoeQA5oBKQongAEBigEQMi4yMDI1MDIyMi4xMC4wMJIBB1dpbmRvd3OaAQQxMC4w"
+
+    runtimeEncoded = handler.encode(sample)
+    decodedResult = handler.decode(expectedEncoded)
+
+    encodeMatch = runtimeEncoded = expectedEncoded
+    expectedJson = FormatJson(sample)
+    actualJson = FormatJson(decodedResult)
+    decodeMatch = (expectedJson = actualJson)
+
+    if encodeMatch and decodeMatch then
+        print "  OK"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return true
+    end if
+
+    print "  FAIL"
+    if not encodeMatch then
+        print "    expected encode: "; expectedEncoded
+        print "    runtime encode:  "; runtimeEncoded
+    end if
+    if not decodeMatch then
+        print "    decoded value mismatch"
+        print "    expected json: " + expectedJson
+        print "    runtime  json: " + actualJson
+        LogMismatchDetails(sample, expectedEncoded, runtimeEncoded, sample, decodedResult)
+    end if
+    print "  duration:  "; timer.TotalMilliseconds(); " ms"
+    return false
+end function
+
+function CreateVideoPlaybackAbrSample() as Object
+    sample = {}
+
+    abrState = {}
+    abrState.playback_rate = 1
+    abrState.player_time_ms = "0"
+    abrState.client_viewport_is_flexible = false
+    abrState.bandwidth_estimate = "4950000"
+    abrState.drc_enabled = false
+    abrState.enabled_track_types_bitfield = 2
+    abrState.sticky_resolution = 1080
+    abrState.last_manual_selected_resolution = 1080
+    sample.client_abr_state = abrState
+
+    bufferedRanges = CreateObject("roArray", 0, true)
+    range = {}
+    formatId = {}
+    formatId.itag = 140
+    formatId.last_modified = "1759475037898391"
+    range.format_id = formatId
+    range.start_time_ms = "0"
+    range.duration_ms = "2147483647"
+    range.start_segment_index = 2147483008
+    range.end_segment_index = 2147483008
+    timeRange = {}
+    timeRange.duration_ticks = "2147483647"
+    timeRange.start_ticks = "0"
+    timeRange.timescale = 1000
+    range.time_range = timeRange
+    bufferedRanges.Push(range)
+    sample.buffered_ranges = bufferedRanges
+
+    selectedFormatIds = CreateObject("roArray", 0, true)
+    selectedFormatIds.Push(CloneFormatId(140, "1759475037898391"))
+    sample.selected_format_ids = selectedFormatIds
+
+    preferredAudio = CreateObject("roArray", 0, true)
+    preferredAudio.Push(CloneFormatId(140, "1759475037898391"))
+    sample.preferred_audio_format_ids = preferredAudio
+
+    preferredVideo = CreateObject("roArray", 0, true)
+    preferredVideo.Push(CloneFormatId(399, "1759475866788004"))
+    sample.preferred_video_format_ids = preferredVideo
+
+    streamerContext = {}
+    clientInfo = {}
+    clientInfo.os_name = "Windows"
+    clientInfo.os_version = "10.0"
+    clientInfo.client_name = 1
+    clientInfo.client_version = "2.20250222.10.00"
+    streamerContext.client_info = clientInfo
+    sample.streamer_context = streamerContext
+
+    return sample
+end function
+
+function CloneFormatId(itag as Integer, lastModified as String) as Object
+    id = {}
+    id.itag = itag
+    id.last_modified = lastModified
+    return id
+end function
 
 sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEncoded as String, baselineDecoded as Object, runtimeDecoded as Object)
     print "    -- mismatch diagnostics --"

@@ -103,12 +103,12 @@ async function run() {
   assert.ok(int32File.includes("__pb_writeVarint(bytes, 8)"), "int32 encode should emit field tag");
   assert.ok(int32File.includes("message.value = __pb_toSigned32FromString(valueResult.value)"), "int32 decode should use signed helper");
   assert.ok(uint32File.includes("__pb_writeVarint(bytes, 8)"), "uint32 encode should emit field tag");
-  assert.ok(uint32File.includes("__pb_writeVarint64(bytes, value)"), "uint32 encode should use 64-bit writer to avoid Int overflow");
+  assert.ok(uint32File.includes("__pb_writeVarint64(bytes, field_value)"), "uint32 encode should use 64-bit writer to avoid Int overflow");
   assert.ok(uint32File.includes("message.value = __pb_toUnsigned32(valueResult.value)"), "uint32 decode should coerce to unsigned");
   assert.ok(!uint32File.includes("value = Int(value)"), "uint32 encode should not truncate using Int()");
 
   assert.ok(uint64File.includes("__pb_writeVarint(bytes, 8)"), "uint64 encode should emit field tag");
-  assert.ok(uint64File.includes("__pb_writeVarint64(bytes, value)"), "uint64 encode should write via 64-bit helper");
+  assert.ok(uint64File.includes("__pb_writeVarint64(bytes, field_value)"), "uint64 encode should write via 64-bit helper");
   assert.ok(uint64File.includes("valueResult = __pb_readVarint64(bytes, cursor)"), "uint64 decode should read via 64-bit helper");
   assert.ok(uint64File.includes("message.value = valueResult.value"), "uint64 decode should keep unsigned decimal string");
   assert.ok(!uint64File.includes("__pb_toSignedInt64String"), "uint64 decode should not convert to signed representation");
@@ -122,60 +122,61 @@ async function run() {
   assert.ok(sint64File.includes("__pb_writeVarint64(bytes, encoded)"), "sint64 encode should write zigzagged value");
 
   assert.ok(floatFile.includes("__pb_writeVarint(bytes, 13)"), "float encode should emit fixed32 field tag");
-  assert.ok(floatFile.includes("__pb_writeFloat32(bytes, value)"), "float encode should write via float helper");
+  assert.ok(floatFile.includes("__pb_writeFloat32(bytes, normalized)"), "float encode should write via float helper");
   assert.ok(floatFile.includes("wireType = tagResult.value AND &h07"), "float decode should compute wire type");
   assert.ok(floatFile.includes("wireType = 5"), "float decode should use fixed32 wire type");
   assert.ok(floatFile.includes("floatResult = __pb_readFloat32(bytes, cursor)"), "float decode should read fixed32 chunk");
   assert.ok(floatFile.includes("message.value = floatResult.value"), "float decode should assign decoded float");
 
   assert.ok(packedInt32File.includes("__pb_writeVarint(bytes, 10)"), "packed int32 encode should emit length-delimited tag");
-  assert.ok(packedInt32File.includes("__pb_writeVarint(packed, normalized)"), "packed int32 encode should pack values");
-  assert.ok(packedInt32File.includes("else if wireType = 2 then"), "packed int32 decode should handle packed wire type");
-  assert.ok(packedInt32File.includes("values.Push(__pb_toSigned32FromString"), "packed int32 decode should convert varints");
-  assert.ok(packedInt32File.includes("if true then"), "packed int32 encode should take packed branch");
+  assert.ok(packedInt32File.includes("valuesPacked = __pb_createByteArray()"), "packed int32 encode should allocate packed buffer");
+  assert.ok(packedInt32File.includes("__pb_writeVarint(valuesPacked, normalized)"), "packed int32 encode should pack values");
+  assert.ok(packedInt32File.includes("while cursor < valuesPackEnd"), "packed int32 decode should handle packed wire type");
+  assert.ok(packedInt32File.includes("valuesValues.Push(__pb_toSigned32FromString"), "packed int32 decode should convert varints");
 
-  assert.ok(unpackedInt32File.includes("if false then"), "unpacked int32 encode should skip packed branch");
+  assert.ok(unpackedInt32File.includes("for each valuesItem in valuesItems"), "unpacked int32 encode should iterate each value");
   assert.ok(unpackedInt32File.includes("__pb_writeVarint(bytes, 8)"), "unpacked int32 encode should emit element tag per value");
   assert.ok(unpackedInt32File.includes("__pb_writeVarint(bytes, normalized)"), "unpacked int32 encode should write varint per element");
 
   assert.ok(packedUint32File.includes("__pb_writeVarint(bytes, 10)"), "packed uint32 encode should emit packed tag");
-  assert.ok(packedUint32File.includes("values.Push(__pb_toUnsigned32"), "packed uint32 decode should convert to unsigned");
+  assert.ok(packedUint32File.includes("__pb_writeVarint64(valuesPacked, valuesItem)"), "packed uint32 encode should pack unsigned values");
+  assert.ok(packedUint32File.includes("valuesValues.Push(__pb_toUnsigned32"), "packed uint32 decode should convert to unsigned");
 
-  assert.ok(unpackedUint32File.includes("if false then"), "unpacked uint32 encode should skip packed branch");
+  assert.ok(unpackedUint32File.includes("for each valuesItem in valuesItems"), "unpacked uint32 encode should iterate each value");
   assert.ok(unpackedUint32File.includes("__pb_writeVarint(bytes, 8)"), "unpacked uint32 encode should emit element tag");
-  assert.ok(unpackedUint32File.includes("__pb_writeVarint64(bytes, rawValue)"), "unpacked uint32 encode should write each value individually");
+  assert.ok(unpackedUint32File.includes("__pb_writeVarint64(bytes, valuesItem)"), "unpacked uint32 encode should write each value individually");
 
-  assert.ok(packedBoolFile.includes("normalizeBool"), "packed bool encode should normalize inputs");
-  assert.ok(packedBoolFile.includes("values.Push(valueResult.value <> 0)"), "packed bool decode should coerce to boolean");
+  assert.ok(packedBoolFile.includes("lower = LCase(boolValue)"), "packed bool encode should normalize string inputs");
+  assert.ok(packedBoolFile.includes("__pb_writeVarint(valuesPacked, boolInt)"), "packed bool encode should pack bool integers");
+  assert.ok(packedBoolFile.includes("valuesValues.Push(valueResult.value <> 0)"), "packed bool decode should coerce to boolean");
 
-  assert.ok(unpackedBoolFile.includes("if false then"), "unpacked bool encode should skip packed branch");
+  assert.ok(unpackedBoolFile.includes("boolInt = 0"), "unpacked bool encode should compute integer representation");
   assert.ok(unpackedBoolFile.includes("__pb_writeVarint(bytes, boolInt)"), "unpacked bool encode should write per element");
 
-  assert.ok(packedFloatFile.includes("__pb_writeFloat32(packed"), "packed float encode should write float values");
-  assert.ok(packedFloatFile.includes("else if wireType = 2 then"), "packed float decode should handle packed form");
-  assert.ok(packedFloatFile.includes("values.Push(valueResult.value)"), "packed float decode should push unpacked values");
+  assert.ok(packedFloatFile.includes("valuesPacked = __pb_createByteArray()"), "packed float encode should write packed buffer");
+  assert.ok(packedFloatFile.includes("__pb_writeFloat32(valuesPacked, normalized)"), "packed float encode should write float values");
+  assert.ok(packedFloatFile.includes("while cursor < valuesPackEnd"), "packed float decode should handle packed form");
+  assert.ok(packedFloatFile.includes("valuesValues.Push(floatResult.value)"), "packed float decode should push unpacked values");
 
-  assert.ok(unpackedFloatFile.includes("if false then"), "unpacked float encode should skip packed branch");
-  assert.ok(unpackedFloatFile.includes("__pb_writeFloat32(bytes, __pb_toLong(rawValue))"), "unpacked float encode should write each float");
+  assert.ok(unpackedFloatFile.includes("__pb_writeFloat32(bytes, normalized)"), "unpacked float encode should write each float");
 
-  assert.ok(enumFile.includes("EnumMessageEnumValues"), "enum encode should declare value mapping");
-  assert.ok(enumFile.includes("EnumMessageEnumNames"), "enum decode should declare reverse mapping");
-  assert.ok(enumFile.includes("EnumMessage_normalizeEnum"), "enum encode should normalize string inputs");
+  assert.ok(enumFile.includes("EnumMessage_choice_getEnumValues"), "enum encode should declare value mapping");
+  assert.ok(enumFile.includes("EnumMessage_choice_getEnumNames"), "enum decode should declare reverse mapping");
+  assert.ok(enumFile.includes("EnumMessage_choice_normalizeEnum"), "enum encode should normalize string inputs");
   assert.ok(enumFile.includes("__pb_writeVarint(bytes, 8)"), "enum encode should write varint tag");
-  assert.ok(enumFile.includes("message.choice = EnumMessage_enumName"), "enum decode should convert numbers to labels");
+  assert.ok(enumFile.includes("message.choice = EnumMessage_choice_enumName"), "enum decode should convert numbers to labels");
 
-  assert.ok(packedEnumFile.includes("__pb_writeVarint(packed"), "packed enum encode should write packed values");
-  assert.ok(packedEnumFile.includes("values.Push(PackedEnumMessage_enumName"), "packed enum decode should convert to labels");
+  assert.ok(packedEnumFile.includes("__pb_writeVarint(choicesPacked, numericValue)"), "packed enum encode should write packed values");
+  assert.ok(packedEnumFile.includes("choicesValues.Push(PackedEnumMessage_choices_enumName"), "packed enum decode should convert to labels");
 
-  assert.ok(unpackedEnumFile.includes("if false then"), "unpacked enum encode should skip packed branch");
   assert.ok(unpackedEnumFile.includes("__pb_writeVarint(bytes, numericValue)"), "unpacked enum encode should write each value");
 
   assert.ok(parentMessageFile.includes("ChildMessageEncode"), "message encode should call child encoder");
   assert.ok(parentMessageFile.includes("ChildMessageDecode"), "message decode should call child decoder");
   assert.ok(parentMessageFile.includes("__pb_writeVarint(bytes, 10)"), "message encode should use length-delimited tag");
 
-  assert.ok(parentRepeatedMessageFile.includes("ParentRepeatedMessage_encodeNested"), "repeated message encode should normalise each child");
-  assert.ok(parentRepeatedMessageFile.includes("values = CreateObject(\"roArray\", 0, true)"), "repeated message decode should create resizable array");
+  assert.ok(parentRepeatedMessageFile.includes("for each childrenItem in childrenItems"), "repeated message encode should iterate children");
+  assert.ok(parentRepeatedMessageFile.includes("childrenValues = CreateObject(\"roArray\", 0, true)"), "repeated message decode should create resizable array");
   assert.ok(parentRepeatedMessageFile.includes("ChildMessageDecode"), "repeated message decode should decode child messages");
 
   console.log("generator tests passed.");

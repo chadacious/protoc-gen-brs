@@ -11,6 +11,16 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const OUT_DIR = path.join(projectRoot, "out");
 const LOG_PATH = path.join(OUT_DIR, "roku-log.txt");
+const DEFAULT_VIDEO_PROTO_ROOT = "/Users/chad/Projects/Temp/googlevideo/protos";
+const VIDEO_PROTO_FILES = [
+  "misc/common.proto",
+  "video_streaming/time_range.proto",
+  "video_streaming/media_capabilities.proto",
+  "video_streaming/client_abr_state.proto",
+  "video_streaming/streamer_context.proto",
+  "video_streaming/buffered_range.proto",
+  "video_streaming/video_playback_abr_request.proto"
+];
 
 const host = process.env.ROKU_HOST;
 const password = process.env.ROKU_PASSWORD;
@@ -35,6 +45,43 @@ async function runCommand(command, args, options = {}) {
     });
   });
 }
+
+async function ensureGeneratedArtifacts() {
+  const videoProtoRoot = process.env.VIDEO_PROTO_ROOT ?? DEFAULT_VIDEO_PROTO_ROOT;
+  try {
+    await fsPromises.access(videoProtoRoot);
+  } catch {
+    throw new Error(
+      `Video proto directory not found at "${videoProtoRoot}". ` +
+        "Set VIDEO_PROTO_ROOT to the root containing the googlevideo protos."
+    );
+  }
+
+  const protoFiles = VIDEO_PROTO_FILES.map((relative) => path.join(videoProtoRoot, relative));
+  for (const filePath of protoFiles) {
+    try {
+      await fsPromises.access(filePath);
+    } catch {
+      throw new Error(`Unable to locate required proto at "${filePath}"`);
+    }
+  }
+
+  const generateArgs = ["run", "generate:brs", "--", "--proto", "proto/simple.proto"];
+  for (const filePath of protoFiles) {
+    generateArgs.push("--proto", filePath);
+  }
+
+  await runCommand(
+    "npm",
+    generateArgs,
+    { cwd: projectRoot }
+  );
+
+  await runCommand("npm", ["run", "generate:baseline", "--", "--proto", "proto/simple.proto"], {
+    cwd: projectRoot
+  });
+}
+
 
 async function buildRokuBundle() {
   await runCommand("npm", ["run", "build:roku"], { cwd: projectRoot });
@@ -215,6 +262,7 @@ async function captureTelnetLog() {
 
 async function main() {
   console.log("Building Roku bundle…");
+  await ensureGeneratedArtifacts();
   await buildRokuBundle();
 
   console.log(`Deploying to Roku device at ${host}…`);
