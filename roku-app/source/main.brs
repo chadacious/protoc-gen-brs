@@ -153,15 +153,15 @@ function RunVideoPlaybackAbrParityTest(handlers as Object) as Boolean
 
     if encodeMatch and decodeMatch then
         print "  OK"
+        print "    expected encode: "; expectedEncoded
+        print "    runtime encode:  "; runtimeEncoded
         print "  duration:  "; timer.TotalMilliseconds(); " ms"
         return true
     end if
 
     print "  FAIL"
-    if not encodeMatch then
-        print "    expected encode: "; expectedEncoded
-        print "    runtime encode:  "; runtimeEncoded
-    end if
+    print "    expected encode: "; expectedEncoded
+    print "    runtime encode:  "; runtimeEncoded
     if not decodeMatch then
         print "    decoded value mismatch"
         print "    expected json: " + expectedJson
