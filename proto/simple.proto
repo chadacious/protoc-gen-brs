@@ -88,3 +88,15 @@ message EnumMessage {
 message PackedEnumMessage {
   repeated SampleEnum choices = 1;
 }
+
+message ChildMessage {
+  int32 value = 1;
+}
+
+message ParentMessage {
+  ChildMessage child = 1;
+}
+
+message ParentRepeatedMessage {
+  repeated ChildMessage children = 1;
+}

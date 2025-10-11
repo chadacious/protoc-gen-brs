@@ -1,0 +1,68 @@
+' Auto-generated encoder/decoder for {{TYPE_NAME}}
+
+function {{TYPE_NAME}}Encode(message as Object) as String
+    source = invalid
+    if message <> invalid then
+        if GetInterface(message, "ifAssociativeArray") <> invalid then
+            source = message.Lookup("{{FIELD_NAME}}")
+        else
+            source = message.{{FIELD_NAME}}
+        end if
+    end if
+
+    bytes = __pb_createByteArray()
+    if source <> invalid then
+        if GetInterface(source, "ifArray") <> invalid then
+            for each rawValue in source
+                {{TYPE_NAME}}_encodeNested(bytes, rawValue)
+            end for
+        else
+            {{TYPE_NAME}}_encodeNested(bytes, source)
+        end if
+    end if
+    return __pb_toBase64(bytes)
+end function
+
+function {{TYPE_NAME}}_encodeNested(bytes as Object, nested as Dynamic) as Void
+    if nested = invalid then return
+    encodedChild = {{CHILD_ENCODE}}(nested)
+    childBytes = __pb_fromBase64(encodedChild)
+    __pb_writeVarint(bytes, {{TAG}})
+    __pb_writeVarint(bytes, childBytes.Count())
+    __pb_appendByteArray(bytes, childBytes)
+end function
+
+function {{TYPE_NAME}}Decode(encoded as String) as Object
+    bytes = __pb_fromBase64(encoded)
+    cursor = 0
+    limit = bytes.Count()
+    message = {}
+    while cursor < limit
+        tagResult = __pb_readVarint(bytes, cursor)
+        cursor = tagResult.nextIndex
+        fieldNumber = Int(tagResult.value / 8)
+        wireType = tagResult.value AND &h07
+        if fieldNumber = {{FIELD_ID}} and wireType = {{WIRE_TYPE}} then
+            values = invalid
+            if GetInterface(message, "ifAssociativeArray") <> invalid and message.DoesExist("{{FIELD_NAME}}") then
+                values = message.{{FIELD_NAME}}
+            end if
+            if values = invalid then
+                values = CreateObject("roArray", 0, true)
+                message.{{FIELD_NAME}} = values
+            end if
+
+            lengthResult = __pb_readVarint(bytes, cursor)
+            cursor = lengthResult.nextIndex
+            childLength = lengthResult.value
+            childBytes = __pb_readBytes(bytes, cursor, childLength)
+            cursor = cursor + childLength
+            encodedChild = __pb_byteArrayToBase64(childBytes)
+            values.Push({{CHILD_DECODE}}(encodedChild))
+        else
+            exit while
+        end if
+    end while
+    return message
+end function
+

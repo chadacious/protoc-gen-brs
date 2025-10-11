@@ -3,7 +3,13 @@ import { Buffer } from "node:buffer";
 import fs from "fs-extra";
 import { Writer } from "protobufjs";
 import { loadProtoBundle } from "./protoLoader";
-import { collectSimpleScalarMessages, SimpleScalarMessageDescriptor, SupportedScalarType } from "./schemaUtils";
+import {
+  collectSimpleScalarMessages,
+  collectSimpleMessageFieldMessages,
+  SimpleScalarMessageDescriptor,
+  SimpleMessageFieldDescriptor,
+  SupportedScalarType
+} from "./schemaUtils";
 
 const PACKABLE_SCALAR_TYPES = new Set<SupportedScalarType>([
   "int32",
@@ -31,7 +37,8 @@ const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
   enum: 0
 };
 
-type SampleValue = string | number | boolean | Array<string | number | boolean>;
+type SamplePrimitive = string | number | boolean | Record<string, unknown>;
+type SampleValue = SamplePrimitive | SamplePrimitive[];
 
 export interface GenerateBaselineOptions {
   protoPaths: string[];
@@ -44,6 +51,8 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
 
   const bundle = await loadProtoBundle(options.protoPaths);
   const simpleMessages = collectSimpleScalarMessages(bundle.root);
+  const messageFieldMessages = collectSimpleMessageFieldMessages(bundle.root);
+  const scalarDescriptorMap = new Map(simpleMessages.map((descriptor) => [descriptor.type.name, descriptor]));
 
   const cases = [] as BaselineCase[];
 
@@ -77,6 +86,32 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
       }
 
       cases.push(baselineCase);
+    }
+  }
+
+  for (const descriptor of messageFieldMessages) {
+    const samples = buildMessageFieldSamples(descriptor, scalarDescriptorMap);
+    for (const sample of samples) {
+      const payload = {
+        [descriptor.field.name]: sample.value
+      };
+
+      const encodedBuffer = descriptor.type.encode(payload).finish();
+      const encodedBase64 = Buffer.from(encodedBuffer).toString("base64");
+      const decodedMessage = descriptor.type.decode(encodedBuffer);
+      const decoded = descriptor.type.toObject(decodedMessage, { defaults: true, longs: String, bytes: String, enums: String });
+
+      cases.push({
+        type: descriptor.type.name,
+        protoType: descriptor.type.fullName.replace(/^\./, ""),
+        field: descriptor.field.name,
+        fieldId: descriptor.field.id,
+        value: sample.value,
+        valueType: descriptor.childType.name,
+        sampleLabel: sample.label,
+        encodedBase64,
+        decoded
+      });
     }
   }
   const metadataPath = path.join(outputDir, "baseline.json");
@@ -246,6 +281,40 @@ function buildRepeatedSamples(descriptor: SimpleScalarMessageDescriptor): Array<
     default:
       return [{ value: [], label: "empty" }];
   }
+}
+
+function buildMessageFieldSamples(
+  descriptor: SimpleMessageFieldDescriptor,
+  scalarDescriptorMap: Map<string, SimpleScalarMessageDescriptor>
+): Array<{ value: SampleValue; label: string }> {
+  const childType = descriptor.childType;
+  const childDescriptor = scalarDescriptorMap.get(childType.name);
+  if (!childDescriptor) {
+    return [];
+  }
+  const childSamples = buildSamples(childDescriptor);
+  if (childSamples.length === 0) {
+    return [];
+  }
+
+  const childFieldName = childDescriptor.field.name;
+
+  const createChildObject = (sampleValue: SampleValue) => {
+    return { [childFieldName]: sampleValue } as Record<string, unknown>;
+  };
+
+  if (descriptor.isRepeated) {
+    const values: Record<string, unknown>[] = [];
+    for (let i = 0; i < Math.min(childSamples.length, 2); i++) {
+      values.push(createChildObject(childSamples[i].value));
+    }
+    if (values.length === 0) {
+      values.push(createChildObject(childSamples[0].value));
+    }
+    return [{ value: values, label: "multi" }];
+  }
+
+  return [{ value: createChildObject(childSamples[0].value), label: "single" }];
 }
 
 function buildInt64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: string; label: string }> {
@@ -535,9 +604,9 @@ function escapeBrsString(value: string): string {
 }
 
 function formatBrsValue(value: unknown): string {
-  if (Array.isArray(value)) {
-    const formattedItems = value.map((item) => formatBrsValue(item));
-    return `[${formattedItems.join(", ")}]`;
+  if (Array.isArray(value) || (typeof value === "object" && value !== null)) {
+    const jsonString = JSON.stringify(value);
+    return `ParseJson("${escapeBrsString(jsonString)}")`;
   }
   if (typeof value === "boolean") {
     return value ? "true" : "false";

@@ -14,16 +14,23 @@ export interface SimpleScalarMessageDescriptor {
   };
 }
 
+export interface SimpleMessageFieldDescriptor {
+  type: Type;
+  field: Field;
+  childType: Type;
+  isRepeated: boolean;
+}
+
 const SUPPORTED_SCALAR_TYPES: SupportedScalarType[] = ["string", "int32", "uint32", "sint32", "int64", "uint64", "sint64", "bool", "bytes", "float", "enum"];
 
 export function collectSimpleScalarMessages(root: Root): SimpleScalarMessageDescriptor[] {
   const messages = collectTypes(root);
   return messages
-    .map((type) => createDescriptorForType(type))
+    .map((type) => createScalarDescriptorForType(type))
     .filter((descriptor): descriptor is SimpleScalarMessageDescriptor => descriptor !== undefined);
 }
 
-function createDescriptorForType(type: Type): SimpleScalarMessageDescriptor | undefined {
+function createScalarDescriptorForType(type: Type): SimpleScalarMessageDescriptor | undefined {
   const fields = type.fieldsArray;
   if (fields.length !== 1) {
     return undefined;
@@ -40,6 +47,33 @@ function createDescriptorForType(type: Type): SimpleScalarMessageDescriptor | un
     scalarType,
     isRepeated: field.repeated === true,
     enumInfo
+  };
+}
+
+export function collectSimpleMessageFieldMessages(root: Root): SimpleMessageFieldDescriptor[] {
+  const messages = collectTypes(root);
+  return messages
+    .map((type) => createMessageFieldDescriptor(type))
+    .filter((descriptor): descriptor is SimpleMessageFieldDescriptor => descriptor !== undefined);
+}
+
+function createMessageFieldDescriptor(type: Type): SimpleMessageFieldDescriptor | undefined {
+  const fields = type.fieldsArray;
+  if (fields.length !== 1) {
+    return undefined;
+  }
+  const field = fields[0];
+  if (!field.resolvedType && typeof field.resolve === "function") {
+    field.resolve();
+  }
+  if (!(field.resolvedType instanceof Type)) {
+    return undefined;
+  }
+  return {
+    type,
+    field,
+    childType: field.resolvedType,
+    isRepeated: field.repeated === true
   };
 }
 

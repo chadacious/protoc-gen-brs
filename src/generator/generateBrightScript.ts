@@ -2,7 +2,13 @@ import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import fs from "fs-extra";
 import { loadProtoBundle } from "./protoLoader";
-import { collectSimpleScalarMessages, SimpleScalarMessageDescriptor, SupportedScalarType } from "./schemaUtils";
+import {
+  collectSimpleScalarMessages,
+  collectSimpleMessageFieldMessages,
+  SimpleScalarMessageDescriptor,
+  SimpleMessageFieldDescriptor,
+  SupportedScalarType
+} from "./schemaUtils";
 
 export interface GenerateBrightScriptOptions {
   protoPaths: string[];
@@ -16,6 +22,7 @@ export async function generateBrightScriptArtifacts(options: GenerateBrightScrip
 
   const bundle = await loadProtoBundle(options.protoPaths);
   const simpleMessages = collectSimpleScalarMessages(bundle.root);
+  const messageFieldMessages = collectSimpleMessageFieldMessages(bundle.root);
 
   const messagesDir = path.join(resolvedOutput, "messages");
   await fs.ensureDir(messagesDir);
@@ -35,6 +42,22 @@ export async function generateBrightScriptArtifacts(options: GenerateBrightScrip
     await fs.writeFile(
       messagePath,
       renderScalarMessageModule(descriptor),
+      "utf8"
+    );
+
+    registryLines.push(
+      `    handler${descriptor.type.name} = {}`,
+      `    handler${descriptor.type.name}.encode = ${descriptor.type.name}Encode`,
+      `    handler${descriptor.type.name}.decode = ${descriptor.type.name}Decode`,
+      `    handlers.${descriptor.type.name} = handler${descriptor.type.name}`
+    );
+  }
+
+  for (const descriptor of messageFieldMessages) {
+    const messagePath = path.join(messagesDir, `${descriptor.type.name}.brs`);
+    await fs.writeFile(
+      messagePath,
+      renderMessageFieldModule(descriptor),
       "utf8"
     );
 
@@ -164,6 +187,11 @@ const MESSAGE_TEMPLATE_MAP: Record<
   }
 };
 
+const MESSAGE_FIELD_TEMPLATES = {
+  single: "messages/message.brs.tmpl",
+  repeated: "messages/repeated/message.brs.tmpl"
+};
+
 const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
   string: 2,
   int32: 0,
@@ -261,6 +289,26 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
     context.ENUM_NAME_ASSIGNMENTS = buildEnumNameAssignments(descriptor);
     context.ENUM_DEFAULT_KEY = getEnumDefaultKey(descriptor);
   }
+
+  return renderTemplate(template, context);
+}
+
+function renderMessageFieldModule(descriptor: SimpleMessageFieldDescriptor): string {
+  const templatePath = descriptor.isRepeated ? MESSAGE_FIELD_TEMPLATES.repeated : MESSAGE_FIELD_TEMPLATES.single;
+  const template = loadTemplate(templatePath);
+  const wireType = 2;
+  const tag = (descriptor.field.id << 3) | wireType;
+  const childTypeName = descriptor.childType.name;
+
+  const context: Record<string, string> = {
+    TYPE_NAME: descriptor.type.name,
+    FIELD_NAME: descriptor.field.name,
+    FIELD_ID: descriptor.field.id.toString(),
+    TAG: tag.toString(),
+    WIRE_TYPE: wireType.toString(),
+    CHILD_ENCODE: `${childTypeName}Encode`,
+    CHILD_DECODE: `${childTypeName}Decode`
+  };
 
   return renderTemplate(template, context);
 }
