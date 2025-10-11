@@ -9,28 +9,41 @@ function {{TYPE_NAME}}Encode(message as Object) as String
         end if
     end if
 
-    packed = __pb_createByteArray()
+    bytes = __pb_createByteArray()
+    items = invalid
     if source <> invalid then
         if GetInterface(source, "ifArray") <> invalid then
-            for each rawValue in source
+            items = source
+        else
+            single = CreateObject("roArray", 1, true)
+            single.Push(source)
+            items = single
+        end if
+    end if
+
+    if items <> invalid then
+        if {{IS_PACKED}} then
+            packed = __pb_createByteArray()
+            for each rawValue in items
                 boolValue = {{TYPE_NAME}}_normalizeBool(rawValue)
                 boolInt = 0
                 if boolValue = true then boolInt = 1
                 __pb_writeVarint(packed, boolInt)
             end for
+            if packed.Count() > 0 then
+                __pb_writeVarint(bytes, {{PACKED_TAG}})
+                __pb_writeVarint(bytes, packed.Count())
+                __pb_appendByteArray(bytes, packed)
+            end if
         else
-            boolValue = {{TYPE_NAME}}_normalizeBool(source)
-            boolInt = 0
-            if boolValue = true then boolInt = 1
-            __pb_writeVarint(packed, boolInt)
+            for each rawValue in items
+                boolValue = {{TYPE_NAME}}_normalizeBool(rawValue)
+                boolInt = 0
+                if boolValue = true then boolInt = 1
+                __pb_writeVarint(bytes, {{TAG}})
+                __pb_writeVarint(bytes, boolInt)
+            end for
         end if
-    end if
-
-    bytes = __pb_createByteArray()
-    if packed.Count() > 0 then
-        __pb_writeVarint(bytes, {{PACKED_TAG}})
-        __pb_writeVarint(bytes, packed.Count())
-        __pb_appendByteArray(bytes, packed)
     end if
     return __pb_toBase64(bytes)
 end function

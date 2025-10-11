@@ -8,25 +8,9 @@ import {
   collectSimpleMessageFieldMessages,
   SimpleScalarMessageDescriptor,
   SimpleMessageFieldDescriptor,
-  SupportedScalarType
+  SupportedScalarType,
+  PACKABLE_SCALAR_TYPES
 } from "./schemaUtils";
-
-const PACKABLE_SCALAR_TYPES = new Set<SupportedScalarType>([
-  "int32",
-  "uint32",
-  "sint32",
-  "int64",
-  "uint64",
-  "sint64",
-  "bool",
-  "float",
-  "double",
-  "fixed32",
-  "sfixed32",
-  "fixed64",
-  "sfixed64",
-  "enum"
-]);
 
 const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
   string: 2,
@@ -305,35 +289,36 @@ function buildSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value:
 }
 
 function buildRepeatedSamples(descriptor: SimpleScalarMessageDescriptor): Array<{ value: SampleValue; label: string }> {
+  const repeatedLabel = descriptor.isPacked === false ? "unpacked" : "packed";
   switch (descriptor.scalarType) {
     case "int32":
-      return [{ value: [0, descriptor.field.id * 3, -descriptor.field.id * 3], label: "packed" }];
+      return [{ value: [0, descriptor.field.id * 3, -descriptor.field.id * 3], label: repeatedLabel }];
     case "uint32":
-      return [{ value: [0, descriptor.field.id * 10 + 5, 4294967295], label: "packed" }];
+      return [{ value: [0, descriptor.field.id * 10 + 5, 4294967295], label: repeatedLabel }];
     case "sint32":
-      return [{ value: [0, descriptor.field.id * 4, -descriptor.field.id * 4], label: "packed" }];
+      return [{ value: [0, descriptor.field.id * 4, -descriptor.field.id * 4], label: repeatedLabel }];
     case "int64":
-      return [{ value: ["0", String(descriptor.field.id * 100000 + 7), "-123456789"], label: "packed" }];
+      return [{ value: ["0", String(descriptor.field.id * 100000 + 7), "-123456789"], label: repeatedLabel }];
     case "uint64":
-      return [{ value: ["0", "4294967296", "9007199254740991"], label: "packed" }];
+      return [{ value: ["0", "4294967296", "9007199254740991"], label: repeatedLabel }];
     case "sint64":
-      return [{ value: ["0", "2147483647", "-2147483648"], label: "packed" }];
+      return [{ value: ["0", "2147483647", "-2147483648"], label: repeatedLabel }];
     case "bool":
-      return [{ value: [false, true, true], label: "packed" }];
+      return [{ value: [false, true, true], label: repeatedLabel }];
     case "float":
-      return [{ value: [0, 1.25, -2.5], label: "packed" }];
+      return [{ value: [0, 1.25, -2.5], label: repeatedLabel }];
     case "double":
-      return [{ value: [0, 1.5, -3.75], label: "packed" }];
+      return [{ value: [0, 1.5, -3.75], label: repeatedLabel }];
     case "fixed32":
-      return [{ value: [0, descriptor.field.id * 200 + 7, 4294967295], label: "packed" }];
+      return [{ value: [0, descriptor.field.id * 200 + 7, 4294967295], label: repeatedLabel }];
     case "sfixed32":
-      return [{ value: [0, descriptor.field.id * 150 + 11, -descriptor.field.id * 150 - 11], label: "packed" }];
+      return [{ value: [0, descriptor.field.id * 150 + 11, -descriptor.field.id * 150 - 11], label: repeatedLabel }];
     case "fixed64":
-      return [{ value: ["0", "4294967296", "1099511627776"], label: "packed" }];
+      return [{ value: ["0", "4294967296", "1099511627776"], label: repeatedLabel }];
     case "sfixed64":
-      return [{ value: ["0", "2147483647", "-2147483648"], label: "packed" }];
+      return [{ value: ["0", "2147483647", "-2147483648"], label: repeatedLabel }];
     case "enum":
-      return [{ value: buildEnumSampleValues(descriptor, 3), label: "packed" }];
+      return [{ value: buildEnumSampleValues(descriptor, 3), label: repeatedLabel }];
     case "string":
       return [{ value: [`Sample-${descriptor.type.name}-a`, `Sample-${descriptor.type.name}-b`], label: "multi" }];
     case "bytes":
@@ -554,6 +539,11 @@ function buildAlternateEncodings(descriptor: SimpleScalarMessageDescriptor, samp
 
   const arrayValues = (Array.isArray(sampleValue) ? sampleValue : [sampleValue]) as Array<string | number | boolean>;
   if (arrayValues.length === 0) {
+    return [];
+  }
+
+  const preferPacked = descriptor.isPacked !== false;
+  if (!preferPacked) {
     return [];
   }
 

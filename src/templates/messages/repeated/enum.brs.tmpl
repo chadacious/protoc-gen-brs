@@ -10,24 +10,37 @@ function {{TYPE_NAME}}Encode(message as Object) as String
         end if
     end if
 
-    packed = __pb_createByteArray()
+    bytes = __pb_createByteArray()
+    items = invalid
     if source <> invalid then
         if GetInterface(source, "ifArray") <> invalid then
-            for each rawValue in source
-                numericValue = {{TYPE_NAME}}_normalizeEnum(rawValue)
-                __pb_writeVarint(packed, numericValue)
-            end for
+            items = source
         else
-            numericValue = {{TYPE_NAME}}_normalizeEnum(source)
-            __pb_writeVarint(packed, numericValue)
+            single = CreateObject("roArray", 1, true)
+            single.Push(source)
+            items = single
         end if
     end if
 
-    bytes = __pb_createByteArray()
-    if packed.Count() > 0 then
-        __pb_writeVarint(bytes, {{PACKED_TAG}})
-        __pb_writeVarint(bytes, packed.Count())
-        __pb_appendByteArray(bytes, packed)
+    if items <> invalid then
+        if {{IS_PACKED}} then
+            packed = __pb_createByteArray()
+            for each rawValue in items
+                numericValue = {{TYPE_NAME}}_normalizeEnum(rawValue)
+                __pb_writeVarint(packed, numericValue)
+            end for
+            if packed.Count() > 0 then
+                __pb_writeVarint(bytes, {{PACKED_TAG}})
+                __pb_writeVarint(bytes, packed.Count())
+                __pb_appendByteArray(bytes, packed)
+            end if
+        else
+            for each rawValue in items
+                numericValue = {{TYPE_NAME}}_normalizeEnum(rawValue)
+                __pb_writeVarint(bytes, {{TAG}})
+                __pb_writeVarint(bytes, numericValue)
+            end for
+        end if
     end if
     return __pb_toBase64(bytes)
 end function
@@ -123,4 +136,3 @@ function {{TYPE_NAME}}_getEnumNames() as Object
     if globalAA <> invalid then globalAA[key] = table
     return table
 end function
-

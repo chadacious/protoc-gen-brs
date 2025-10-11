@@ -19,9 +19,13 @@ async function createProto(tempDir: string) {
     message Sint64Message { sint64 value = 1; }
     message FloatMessage { float value = 1; }
     message PackedInt32Message { repeated int32 values = 1; }
+    message UnpackedInt32Message { repeated int32 values = 1 [packed = false]; }
     message PackedUint32Message { repeated uint32 values = 1; }
+    message UnpackedUint32Message { repeated uint32 values = 1 [packed = false]; }
     message PackedBoolMessage { repeated bool values = 1; }
+    message UnpackedBoolMessage { repeated bool values = 1 [packed = false]; }
     message PackedFloatMessage { repeated float values = 1; }
+    message UnpackedFloatMessage { repeated float values = 1 [packed = false]; }
     enum SampleEnum {
       SAMPLE_ENUM_UNKNOWN = 0;
       SAMPLE_ENUM_FIRST = 1;
@@ -29,6 +33,7 @@ async function createProto(tempDir: string) {
     }
     message EnumMessage { SampleEnum choice = 1; }
     message PackedEnumMessage { repeated SampleEnum choices = 1; }
+    message UnpackedEnumMessage { repeated SampleEnum choices = 1 [packed = false]; }
     message ChildMessage { int32 value = 1; }
     message ParentMessage { ChildMessage child = 1; }
     message ParentRepeatedMessage { repeated ChildMessage children = 1; }
@@ -52,11 +57,16 @@ async function generateBrightScript(protoPath: string, outputDir: string) {
     sint64File: await readMessage("Sint64Message"),
     floatFile: await readMessage("FloatMessage"),
     packedInt32File: await readMessage("PackedInt32Message"),
+    unpackedInt32File: await readMessage("UnpackedInt32Message"),
     packedUint32File: await readMessage("PackedUint32Message"),
+    unpackedUint32File: await readMessage("UnpackedUint32Message"),
     packedBoolFile: await readMessage("PackedBoolMessage"),
+    unpackedBoolFile: await readMessage("UnpackedBoolMessage"),
     packedFloatFile: await readMessage("PackedFloatMessage"),
+    unpackedFloatFile: await readMessage("UnpackedFloatMessage"),
     enumFile: await readMessage("EnumMessage"),
     packedEnumFile: await readMessage("PackedEnumMessage"),
+    unpackedEnumFile: await readMessage("UnpackedEnumMessage"),
     childMessageFile: await readMessage("ChildMessage"),
     parentMessageFile: await readMessage("ParentMessage"),
     parentRepeatedMessageFile: await readMessage("ParentRepeatedMessage")
@@ -75,11 +85,16 @@ async function run() {
     sint64File,
     floatFile,
     packedInt32File,
+    unpackedInt32File,
     packedUint32File,
+    unpackedUint32File,
     packedBoolFile,
+    unpackedBoolFile,
     packedFloatFile,
+    unpackedFloatFile,
     enumFile,
     packedEnumFile,
+    unpackedEnumFile,
     childMessageFile,
     parentMessageFile,
     parentRepeatedMessageFile
@@ -117,16 +132,31 @@ async function run() {
   assert.ok(packedInt32File.includes("__pb_writeVarint(packed, normalized)"), "packed int32 encode should pack values");
   assert.ok(packedInt32File.includes("else if wireType = 2 then"), "packed int32 decode should handle packed wire type");
   assert.ok(packedInt32File.includes("values.Push(__pb_toSigned32FromString"), "packed int32 decode should convert varints");
+  assert.ok(packedInt32File.includes("if true then"), "packed int32 encode should take packed branch");
+
+  assert.ok(unpackedInt32File.includes("if false then"), "unpacked int32 encode should skip packed branch");
+  assert.ok(unpackedInt32File.includes("__pb_writeVarint(bytes, 8)"), "unpacked int32 encode should emit element tag per value");
+  assert.ok(unpackedInt32File.includes("__pb_writeVarint(bytes, normalized)"), "unpacked int32 encode should write varint per element");
 
   assert.ok(packedUint32File.includes("__pb_writeVarint(bytes, 10)"), "packed uint32 encode should emit packed tag");
   assert.ok(packedUint32File.includes("values.Push(__pb_toUnsigned32"), "packed uint32 decode should convert to unsigned");
 
+  assert.ok(unpackedUint32File.includes("if false then"), "unpacked uint32 encode should skip packed branch");
+  assert.ok(unpackedUint32File.includes("__pb_writeVarint(bytes, 8)"), "unpacked uint32 encode should emit element tag");
+  assert.ok(unpackedUint32File.includes("__pb_writeVarint64(bytes, rawValue)"), "unpacked uint32 encode should write each value individually");
+
   assert.ok(packedBoolFile.includes("normalizeBool"), "packed bool encode should normalize inputs");
   assert.ok(packedBoolFile.includes("values.Push(valueResult.value <> 0)"), "packed bool decode should coerce to boolean");
+
+  assert.ok(unpackedBoolFile.includes("if false then"), "unpacked bool encode should skip packed branch");
+  assert.ok(unpackedBoolFile.includes("__pb_writeVarint(bytes, boolInt)"), "unpacked bool encode should write per element");
 
   assert.ok(packedFloatFile.includes("__pb_writeFloat32(packed"), "packed float encode should write float values");
   assert.ok(packedFloatFile.includes("else if wireType = 2 then"), "packed float decode should handle packed form");
   assert.ok(packedFloatFile.includes("values.Push(valueResult.value)"), "packed float decode should push unpacked values");
+
+  assert.ok(unpackedFloatFile.includes("if false then"), "unpacked float encode should skip packed branch");
+  assert.ok(unpackedFloatFile.includes("__pb_writeFloat32(bytes, __pb_toLong(rawValue))"), "unpacked float encode should write each float");
 
   assert.ok(enumFile.includes("EnumMessageEnumValues"), "enum encode should declare value mapping");
   assert.ok(enumFile.includes("EnumMessageEnumNames"), "enum decode should declare reverse mapping");
@@ -136,6 +166,9 @@ async function run() {
 
   assert.ok(packedEnumFile.includes("__pb_writeVarint(packed"), "packed enum encode should write packed values");
   assert.ok(packedEnumFile.includes("values.Push(PackedEnumMessage_enumName"), "packed enum decode should convert to labels");
+
+  assert.ok(unpackedEnumFile.includes("if false then"), "unpacked enum encode should skip packed branch");
+  assert.ok(unpackedEnumFile.includes("__pb_writeVarint(bytes, numericValue)"), "unpacked enum encode should write each value");
 
   assert.ok(parentMessageFile.includes("ChildMessageEncode"), "message encode should call child encoder");
   assert.ok(parentMessageFile.includes("ChildMessageDecode"), "message decode should call child decoder");

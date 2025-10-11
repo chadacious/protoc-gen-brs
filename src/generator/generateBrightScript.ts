@@ -7,7 +7,8 @@ import {
   collectSimpleMessageFieldMessages,
   SimpleScalarMessageDescriptor,
   SimpleMessageFieldDescriptor,
-  SupportedScalarType
+  SupportedScalarType,
+  PACKABLE_SCALAR_TYPES
 } from "./schemaUtils";
 
 export interface GenerateBrightScriptOptions {
@@ -307,6 +308,12 @@ function renderScalarMessageModule(descriptor: SimpleScalarMessageDescriptor): s
     context.PACKED_TAG = packedTag.toString();
     context.PACKED_WIRE_TYPE = "2";
     context.ELEMENT_WIRE_TYPE = wireType.toString();
+    if (PACKABLE_SCALAR_TYPES.has(descriptor.scalarType)) {
+      const usePacked = descriptor.isPacked !== false;
+      context.IS_PACKED = usePacked ? "true" : "false";
+    } else {
+      context.IS_PACKED = "false";
+    }
   }
 
   if (descriptor.scalarType === "enum" && descriptor.enumInfo) {

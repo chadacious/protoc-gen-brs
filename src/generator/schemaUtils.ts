@@ -23,6 +23,7 @@ export interface SimpleScalarMessageDescriptor {
   field: Field;
   scalarType: SupportedScalarType;
   isRepeated: boolean;
+  isPacked?: boolean;
   enumInfo?: {
     name: string;
     values: Record<string, number>;
@@ -56,6 +57,23 @@ const SUPPORTED_SCALAR_TYPES: SupportedScalarType[] = [
   "enum"
 ];
 
+export const PACKABLE_SCALAR_TYPES = new Set<SupportedScalarType>([
+  "int32",
+  "uint32",
+  "sint32",
+  "int64",
+  "uint64",
+  "sint64",
+  "bool",
+  "float",
+  "double",
+  "fixed32",
+  "sfixed32",
+  "fixed64",
+  "sfixed64",
+  "enum"
+]);
+
 export function collectSimpleScalarMessages(root: Root): SimpleScalarMessageDescriptor[] {
   const messages = collectTypes(root);
   return messages
@@ -74,11 +92,16 @@ function createScalarDescriptorForType(type: Type): SimpleScalarMessageDescripto
     return undefined;
   }
   const scalarType: SupportedScalarType = enumInfo ? "enum" : (field.type as SupportedScalarType);
+  let isPacked: boolean | undefined;
+  if (field.repeated === true && PACKABLE_SCALAR_TYPES.has(scalarType)) {
+    isPacked = field.packed !== false;
+  }
   return {
     type,
     field,
     scalarType,
     isRepeated: field.repeated === true,
+    isPacked,
     enumInfo
   };
 }

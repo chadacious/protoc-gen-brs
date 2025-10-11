@@ -9,24 +9,37 @@ function {{TYPE_NAME}}Encode(message as Object) as String
         end if
     end if
 
-    packed = __pb_createByteArray()
+    bytes = __pb_createByteArray()
+    items = invalid
     if source <> invalid then
         if GetInterface(source, "ifArray") <> invalid then
-            for each rawValue in source
-                encoded = __pb_encodeZigZag64(rawValue)
-                __pb_writeVarint64(packed, encoded)
-            end for
+            items = source
         else
-            encoded = __pb_encodeZigZag64(source)
-            __pb_writeVarint64(packed, encoded)
+            single = CreateObject("roArray", 1, true)
+            single.Push(source)
+            items = single
         end if
     end if
 
-    bytes = __pb_createByteArray()
-    if packed.Count() > 0 then
-        __pb_writeVarint(bytes, {{PACKED_TAG}})
-        __pb_writeVarint(bytes, packed.Count())
-        __pb_appendByteArray(bytes, packed)
+    if items <> invalid then
+        if {{IS_PACKED}} then
+            packed = __pb_createByteArray()
+            for each rawValue in items
+                encoded = __pb_encodeZigZag64(rawValue)
+                __pb_writeVarint64(packed, encoded)
+            end for
+            if packed.Count() > 0 then
+                __pb_writeVarint(bytes, {{PACKED_TAG}})
+                __pb_writeVarint(bytes, packed.Count())
+                __pb_appendByteArray(bytes, packed)
+            end if
+        else
+            for each rawValue in items
+                encoded = __pb_encodeZigZag64(rawValue)
+                __pb_writeVarint(bytes, {{TAG}})
+                __pb_writeVarint64(bytes, encoded)
+            end for
+        end if
     end if
     return __pb_toBase64(bytes)
 end function
@@ -73,4 +86,3 @@ function {{TYPE_NAME}}Decode(encoded as String) as Object
     end while
     return message
 end function
-

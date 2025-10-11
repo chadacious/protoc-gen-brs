@@ -34,9 +34,19 @@ const SCALAR_CASES: ScalarCase[] = [
     repeated: { message: "RepeatedDoubleMessage", field: "values" }
   },
   {
+    protoType: "double",
+    single: { message: "DoubleMessage", field: "value" },
+    repeated: { message: "UnpackedDoubleMessage", field: "values" }
+  },
+  {
     protoType: "float",
     single: { message: "FloatMessage", field: "value" },
     repeated: { message: "RepeatedFloatMessage", field: "values" }
+  },
+  {
+    protoType: "float",
+    single: { message: "FloatMessage", field: "value" },
+    repeated: { message: "UnpackedFloatMessage", field: "values" }
   },
   {
     protoType: "fixed32",
@@ -44,9 +54,19 @@ const SCALAR_CASES: ScalarCase[] = [
     repeated: { message: "RepeatedFixed32Message", field: "values" }
   },
   {
+    protoType: "fixed32",
+    single: { message: "Fixed32Message", field: "value" },
+    repeated: { message: "UnpackedFixed32Message", field: "values" }
+  },
+  {
     protoType: "sfixed32",
     single: { message: "Sfixed32Message", field: "value" },
     repeated: { message: "RepeatedSfixed32Message", field: "values" }
+  },
+  {
+    protoType: "sfixed32",
+    single: { message: "Sfixed32Message", field: "value" },
+    repeated: { message: "UnpackedSfixed32Message", field: "values" }
   },
   {
     protoType: "fixed64",
@@ -54,9 +74,19 @@ const SCALAR_CASES: ScalarCase[] = [
     repeated: { message: "RepeatedFixed64Message", field: "values" }
   },
   {
+    protoType: "fixed64",
+    single: { message: "Fixed64Message", field: "value" },
+    repeated: { message: "UnpackedFixed64Message", field: "values" }
+  },
+  {
     protoType: "sfixed64",
     single: { message: "Sfixed64Message", field: "value" },
     repeated: { message: "RepeatedSfixed64Message", field: "values" }
+  },
+  {
+    protoType: "sfixed64",
+    single: { message: "Sfixed64Message", field: "value" },
+    repeated: { message: "UnpackedSfixed64Message", field: "values" }
   },
   {
     protoType: "uint32",
@@ -64,9 +94,19 @@ const SCALAR_CASES: ScalarCase[] = [
     repeated: { message: "RepeatedUint32Message", field: "values" }
   },
   {
+    protoType: "uint32",
+    single: { message: "Uint32Message", field: "value" },
+    repeated: { message: "UnpackedUint32Message", field: "values" }
+  },
+  {
     protoType: "uint64",
     single: { message: "Uint64Message", field: "value" },
     repeated: { message: "RepeatedUint64Message", field: "values" }
+  },
+  {
+    protoType: "uint64",
+    single: { message: "Uint64Message", field: "value" },
+    repeated: { message: "UnpackedUint64Message", field: "values" }
   },
   {
     protoType: "sint32",
@@ -74,9 +114,20 @@ const SCALAR_CASES: ScalarCase[] = [
     repeated: { message: "RepeatedSint32Message", field: "values" }
   },
   {
+    protoType: "sint32",
+    single: { message: "Sint32Message", field: "value" },
+    repeated: { message: "UnpackedSint32Message", field: "values" }
+  },
+  {
     protoType: "sint64",
     single: { message: "Sint64Message", field: "value" },
     repeated: { message: "RepeatedSint64Message", field: "values" }
+  }
+  ,
+  {
+    protoType: "sint64",
+    single: { message: "Sint64Message", field: "value" },
+    repeated: { message: "UnpackedSint64Message", field: "values" }
   }
 ];
 
@@ -160,13 +211,19 @@ async function createProto(tempDir: string) {
   const protoPath = path.join(protoDir, "scalar_parity.proto");
 
   const lines: string[] = ['syntax = "proto3";', "package samples;", ""];
+  const seenSingleMessages = new Set<string>();
+  const seenRepeatedMessages = new Set<string>();
   SCALAR_CASES.forEach((entry, index) => {
     const tag = index + 1;
-    lines.push(
-      `message ${entry.single.message} { ${entry.protoType} ${entry.single.field} = ${tag}; }`,
-      `message ${entry.repeated.message} { repeated ${entry.protoType} ${entry.repeated.field} = ${tag}; }`,
-      ""
-    );
+    const repeatedSuffix = entry.repeated.message.toLowerCase().startsWith("unpacked") ? " [packed = false]" : "";
+    if (!seenSingleMessages.has(entry.single.message)) {
+      lines.push(`message ${entry.single.message} { ${entry.protoType} ${entry.single.field} = ${tag}; }`, "");
+      seenSingleMessages.add(entry.single.message);
+    }
+    if (!seenRepeatedMessages.has(entry.repeated.message)) {
+      lines.push(`message ${entry.repeated.message} { repeated ${entry.protoType} ${entry.repeated.field} = ${tag}${repeatedSuffix}; }`, "");
+      seenRepeatedMessages.add(entry.repeated.message);
+    }
   });
   await fs.writeFile(protoPath, lines.join("\n"), "utf8");
   return protoPath;

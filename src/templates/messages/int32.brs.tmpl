@@ -1,10 +1,57 @@
 ' Auto-generated encoder/decoder for {{TYPE_NAME}}
 function {{TYPE_NAME}}Encode(message as Object) as String
     value = 0
+    shouldEncode = false
     if message <> invalid then
         if GetInterface(message, "ifAssociativeArray") <> invalid then
-            existing = message.Lookup("{{FIELD_NAME}}")
-            if existing <> invalid then
+            if message.DoesExist("{{FIELD_NAME}}") then
+                existing = message.Lookup("{{FIELD_NAME}}")
+                if existing <> invalid then
+                    value = existing
+                    shouldEncode = true
+                end if
+            end if
+        else
+            candidate = message.{{FIELD_NAME}}
+            if candidate <> invalid then
+                value = candidate
+                shouldEncode = true
+            end if
+        end if
+    end if
+
+    if shouldEncode = false then
+        return __pb_toBase64(__pb_createByteArray())
+    end if
+
+    value = Int(value)
+
+    bytes = __pb_createByteArray()
+    __pb_writeVarint(bytes, {{TAG}})
+    __pb_writeVarint(bytes, value)
+    return __pb_toBase64(bytes)
+end function
+
+function {{TYPE_NAME}}Decode(encoded as String) as Object
+    bytes = __pb_fromBase64(encoded)
+    cursor = 0
+    limit = bytes.Count()
+    message = {}
+    while cursor < limit
+        tagResult = __pb_readVarint(bytes, cursor)
+        cursor = tagResult.nextIndex
+        fieldNumber = Int(tagResult.value / 8)
+        wireType = tagResult.value AND &h07
+        if fieldNumber = {{FIELD_ID}} and wireType = {{WIRE_TYPE}} then
+            valueResult = __pb_readVarint64(bytes, cursor)
+            cursor = valueResult.nextIndex
+            message.{{FIELD_NAME}} = __pb_toSigned32FromString(valueResult.value)
+        else
+            exit while
+        end if
+    end while
+    return message
+end function
                 value = existing
             end if
         else
@@ -42,4 +89,3 @@ function {{TYPE_NAME}}Decode(encoded as String) as Object
     end while
     return message
 end function
-

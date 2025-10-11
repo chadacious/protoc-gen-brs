@@ -73,52 +73,104 @@ message PackedInt32Message {
   repeated int32 values = 1;
 }
 
+message UnpackedInt32Message {
+  repeated int32 values = 1 [packed = false];
+}
+
 message PackedUint32Message {
   repeated uint32 values = 1;
+}
+
+message UnpackedUint32Message {
+  repeated uint32 values = 1 [packed = false];
 }
 
 message PackedSint32Message {
   repeated sint32 values = 1;
 }
 
+message UnpackedSint32Message {
+  repeated sint32 values = 1 [packed = false];
+}
+
 message PackedInt64Message {
   repeated int64 values = 1;
+}
+
+message UnpackedInt64Message {
+  repeated int64 values = 1 [packed = false];
 }
 
 message PackedUint64Message {
   repeated uint64 values = 1;
 }
 
+message UnpackedUint64Message {
+  repeated uint64 values = 1 [packed = false];
+}
+
 message PackedSint64Message {
   repeated sint64 values = 1;
+}
+
+message UnpackedSint64Message {
+  repeated sint64 values = 1 [packed = false];
 }
 
 message PackedBoolMessage {
   repeated bool values = 1;
 }
 
+message UnpackedBoolMessage {
+  repeated bool values = 1 [packed = false];
+}
+
 message PackedFloatMessage {
   repeated float values = 1;
+}
+
+message UnpackedFloatMessage {
+  repeated float values = 1 [packed = false];
 }
 
 message RepeatedDoubleMessage {
   repeated double values = 1;
 }
 
+message UnpackedDoubleMessage {
+  repeated double values = 1 [packed = false];
+}
+
 message RepeatedFixed32Message {
   repeated fixed32 values = 1;
+}
+
+message UnpackedFixed32Message {
+  repeated fixed32 values = 1 [packed = false];
 }
 
 message RepeatedSfixed32Message {
   repeated sfixed32 values = 1;
 }
 
+message UnpackedSfixed32Message {
+  repeated sfixed32 values = 1 [packed = false];
+}
+
 message RepeatedFixed64Message {
   repeated fixed64 values = 1;
 }
 
+message UnpackedFixed64Message {
+  repeated fixed64 values = 1 [packed = false];
+}
+
 message RepeatedSfixed64Message {
   repeated sfixed64 values = 1;
+}
+
+message UnpackedSfixed64Message {
+  repeated sfixed64 values = 1 [packed = false];
 }
 
 message EnumMessage {
@@ -127,6 +179,10 @@ message EnumMessage {
 
 message PackedEnumMessage {
   repeated SampleEnum choices = 1;
+}
+
+message UnpackedEnumMessage {
+  repeated SampleEnum choices = 1 [packed = false];
 }
 
 message ChildMessage {
