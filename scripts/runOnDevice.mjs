@@ -77,7 +77,12 @@ async function ensureGeneratedArtifacts() {
     { cwd: projectRoot }
   );
 
-  await runCommand("npm", ["run", "generate:baseline", "--", "--proto", "proto/simple.proto"], {
+  const baselineArgs = ["run", "generate:baseline", "--", "--proto", "proto/simple.proto"];
+  for (const filePath of protoFiles) {
+    baselineArgs.push("--proto", filePath);
+  }
+
+  await runCommand("npm", baselineArgs, {
     cwd: projectRoot
   });
 }

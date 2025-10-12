@@ -179,7 +179,7 @@ function renderMessageEncodeField(field: Extract<MessageFieldDescriptor, { kind:
   const itemsVar = `${names.base}Items`;
   const singleVar = `${names.base}Single`;
 
-  lines.push(...renderValueRetrieval(valueVar, field.name, indentLevel));
+  lines.push(...renderValueRetrieval(valueVar, field, indentLevel));
 
   if (field.isRepeated) {
     lines.push("");
@@ -218,7 +218,7 @@ function renderScalarEncodeField(field: Extract<MessageFieldDescriptor, { kind: 
   const singleVar = `${names.base}Single`;
   const loopVar = `${names.base}Item`;
 
-  lines.push(...renderValueRetrieval(valueVar, field.name, indentLevel));
+  lines.push(...renderValueRetrieval(valueVar, field, indentLevel));
 
   if (field.isRepeated) {
     lines.push("");
@@ -261,7 +261,7 @@ function renderEnumEncodeField(descriptor: MessageDescriptor, field: Extract<Mes
   const loopVar = `${names.base}Item`;
   const normalizeFn = buildEnumNormalizeFunctionName(descriptor, field);
 
-  lines.push(...renderValueRetrieval(valueVar, field.name, indentLevel));
+  lines.push(...renderValueRetrieval(valueVar, field, indentLevel));
 
   if (field.isRepeated) {
     lines.push("");
@@ -617,19 +617,55 @@ function renderScalarPackedWrite(
   }
 }
 
-function renderValueRetrieval(valueVar: string, fieldName: string, indentLevel: number): string[] {
-  return [
-    indent(`${valueVar} = invalid`, indentLevel),
-    indent("if message <> invalid then", indentLevel),
-    indent('if GetInterface(message, "ifAssociativeArray") <> invalid then', indentLevel + 1),
-    indent(`if message.DoesExist("${fieldName}") then`, indentLevel + 2),
-    indent(`${valueVar} = message.Lookup("${fieldName}")`, indentLevel + 3),
-    indent("end if", indentLevel + 2),
-    indent("else", indentLevel + 1),
-    indent(`${valueVar} = message.${fieldName}`, indentLevel + 2),
-    indent("end if", indentLevel + 1),
-    indent("end if", indentLevel)
-  ];
+function renderValueRetrieval(valueVar: string, field: MessageFieldDescriptor, indentLevel: number): string[] {
+  const lines: string[] = [];
+  lines.push(indent(`${valueVar} = invalid`, indentLevel));
+  lines.push(indent("if message <> invalid then", indentLevel));
+  lines.push(indent('if GetInterface(message, "ifAssociativeArray") <> invalid then', indentLevel + 1));
+  lines.push(...renderAssociativeLookupForValue(field, valueVar, indentLevel + 2));
+  lines.push(indent("else", indentLevel + 1));
+  lines.push(indent(`${valueVar} = message.${field.name}`, indentLevel + 2));
+  if (field.camelName !== field.name) {
+    lines.push(indent(`if ${valueVar} = invalid then`, indentLevel + 2));
+    lines.push(indent(`${valueVar} = message.${field.camelName}`, indentLevel + 3));
+    lines.push(indent("end if", indentLevel + 2));
+  }
+  lines.push(indent("end if", indentLevel + 1));
+  lines.push(indent("end if", indentLevel));
+  return lines;
+}
+
+function renderAssociativeLookupForValue(field: MessageFieldDescriptor, targetVar: string, indentLevel: number): string[] {
+  const lines: string[] = [];
+  lines.push(indent(`if message.DoesExist("${field.name}") then`, indentLevel));
+  lines.push(indent(`${targetVar} = message.Lookup("${field.name}")`, indentLevel + 1));
+  if (field.camelName !== field.name) {
+    lines.push(indent(`else if message.DoesExist("${field.camelName}") then`, indentLevel));
+    lines.push(indent(`${targetVar} = message.Lookup("${field.camelName}")`, indentLevel + 1));
+  }
+  lines.push(indent("end if", indentLevel));
+  return lines;
+}
+
+function renderAssociativeLookupForDirect(field: MessageFieldDescriptor, targetVar: string, indentLevel: number): string[] {
+  const lines: string[] = [];
+  lines.push(indent(`if message.DoesExist("${field.name}") then`, indentLevel));
+  lines.push(indent(`${targetVar} = message.${field.name}`, indentLevel + 1));
+  if (field.camelName !== field.name) {
+    lines.push(indent(`else if message.DoesExist("${field.camelName}") then`, indentLevel));
+    lines.push(indent(`${targetVar} = message.${field.camelName}`, indentLevel + 1));
+  }
+  lines.push(indent("end if", indentLevel));
+  return lines;
+}
+
+function renderMessageFieldAssignments(
+  field: MessageFieldDescriptor,
+  valueExpression: string,
+  indentLevel: number,
+  messageVar = "message"
+): string[] {
+  return [indent(`${messageVar}.${field.name} = ${valueExpression}`, indentLevel)];
 }
 
 function renderRepeatedSourceNormalization(
@@ -719,16 +755,18 @@ function renderMessageDecodeBody(
   lines.push(indent(`${encodedVar} = __pb_byteArrayToBase64(${childBytesVar})`, indentLevel + 1));
   if (field.isRepeated) {
     lines.push(indent(`${rawArrayVar} = invalid`, indentLevel + 1));
-    lines.push(indent('if GetInterface(message, "ifAssociativeArray") <> invalid and message.DoesExist("' + field.name + '") then', indentLevel + 1));
-    lines.push(indent(`${rawArrayVar} = message.${field.name}`, indentLevel + 2));
+    lines.push(indent('if GetInterface(message, "ifAssociativeArray") <> invalid then', indentLevel + 1));
+    lines.push(...renderAssociativeLookupForDirect(field, rawArrayVar, indentLevel + 2));
     lines.push(indent("end if", indentLevel + 1));
     lines.push(indent(`if ${rawArrayVar} = invalid then`, indentLevel + 1));
     lines.push(indent(`${rawArrayVar} = CreateObject("roArray", 0, true)`, indentLevel + 2));
-    lines.push(indent(`message.${field.name} = ${rawArrayVar}`, indentLevel + 2));
     lines.push(indent("end if", indentLevel + 1));
+    lines.push(...renderMessageFieldAssignments(field, rawArrayVar, indentLevel + 1));
     lines.push(indent(`${rawArrayVar}.Push(${childDecode}(${encodedVar}))`, indentLevel + 1));
   } else {
-    lines.push(indent(`message.${field.name} = ${childDecode}(${encodedVar})`, indentLevel + 1));
+    const decodedVar = `${sanitizeIdentifier(field.name)}Decoded`;
+    lines.push(indent(`${decodedVar} = ${childDecode}(${encodedVar})`, indentLevel + 1));
+    lines.push(...renderMessageFieldAssignments(field, decodedVar, indentLevel + 1));
   }
   lines.push(indent("else", indentLevel));
   lines.push(...renderUnknownFieldHandler(indentLevel + 1));
@@ -755,7 +793,7 @@ function renderScalarSingleDecode(
   const lines: string[] = [];
 
   lines.push(indent(`if wireType = ${field.wireType} then`, indentLevel));
-  lines.push(...renderScalarSingleRead(scalarType, field.name, indentLevel + 1));
+  lines.push(...renderScalarSingleRead(scalarType, field, indentLevel + 1));
   lines.push(indent("else", indentLevel));
   lines.push(...renderUnknownFieldHandler(indentLevel + 1));
   lines.push(indent("end if", indentLevel));
@@ -774,13 +812,13 @@ function renderScalarRepeatedDecode(
   const elementWireType = field.elementWireType ?? field.wireType;
 
   lines.push(indent(`${valuesVar} = invalid`, indentLevel));
-  lines.push(indent('if GetInterface(message, "ifAssociativeArray") <> invalid and message.DoesExist("' + field.name + '") then', indentLevel));
-  lines.push(indent(`${valuesVar} = message.${field.name}`, indentLevel + 1));
+  lines.push(indent('if GetInterface(message, "ifAssociativeArray") <> invalid then', indentLevel));
+  lines.push(...renderAssociativeLookupForDirect(field, valuesVar, indentLevel + 1));
   lines.push(indent("end if", indentLevel));
   lines.push(indent(`if ${valuesVar} = invalid then`, indentLevel));
   lines.push(indent(`${valuesVar} = CreateObject("roArray", 0, true)`, indentLevel + 1));
-  lines.push(indent(`message.${field.name} = ${valuesVar}`, indentLevel + 1));
   lines.push(indent("end if", indentLevel));
+  lines.push(...renderMessageFieldAssignments(field, valuesVar, indentLevel));
 
   lines.push(indent(`if wireType = ${elementWireType}`, indentLevel));
   lines.push(...renderScalarRepeatedElementRead(scalarType, valuesVar, indentLevel + 1));
@@ -802,104 +840,139 @@ function renderScalarRepeatedDecode(
   return lines;
 }
 
-function renderScalarSingleRead(scalarType: SupportedScalarType, fieldName: string, indentLevel: number): string[] {
+function renderScalarSingleRead(
+  scalarType: SupportedScalarType,
+  field: Extract<MessageFieldDescriptor, { kind: "scalar" }>,
+  indentLevel: number
+): string[] {
+  const valueVar = `${sanitizeIdentifier(field.name)}Value`;
   switch (scalarType) {
-    case "int32":
+    case "int32": {
       return [
         indent("valueResult = __pb_readVarint64(bytes, cursor)", indentLevel),
         indent("cursor = valueResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = __pb_toSigned32FromString(valueResult.value)`, indentLevel)
+        indent(`${valueVar} = __pb_toSigned32FromString(valueResult.value)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "uint32":
+    }
+    case "uint32": {
       return [
         indent("valueResult = __pb_readVarint(bytes, cursor)", indentLevel),
         indent("cursor = valueResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = __pb_toUnsigned32(valueResult.value)`, indentLevel)
+        indent(`${valueVar} = __pb_toUnsigned32(valueResult.value)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "sint32":
+    }
+    case "sint32": {
       return [
         indent("valueResult = __pb_readVarint64(bytes, cursor)", indentLevel),
         indent("cursor = valueResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = __pb_decodeZigZag32(valueResult.value)`, indentLevel)
+        indent(`${valueVar} = __pb_decodeZigZag32(valueResult.value)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "int64":
+    }
+    case "int64": {
       return [
         indent("valueResult = __pb_readVarint64(bytes, cursor)", indentLevel),
         indent("cursor = valueResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = __pb_toSignedInt64String(valueResult.value)`, indentLevel)
+        indent(`${valueVar} = __pb_toSignedInt64String(valueResult.value)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "uint64":
+    }
+    case "uint64": {
       return [
         indent("valueResult = __pb_readVarint64(bytes, cursor)", indentLevel),
         indent("cursor = valueResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = valueResult.value`, indentLevel)
+        indent(`${valueVar} = valueResult.value`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "sint64":
+    }
+    case "sint64": {
       return [
         indent("valueResult = __pb_readVarint64(bytes, cursor)", indentLevel),
         indent("cursor = valueResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = __pb_decodeZigZag64(valueResult.value)`, indentLevel)
+        indent(`${valueVar} = __pb_decodeZigZag64(valueResult.value)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "bool":
+    }
+    case "bool": {
       return [
         indent("valueResult = __pb_readVarint(bytes, cursor)", indentLevel),
         indent("cursor = valueResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = (valueResult.value <> 0)`, indentLevel)
+        indent(`${valueVar} = (valueResult.value <> 0)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "bytes":
+    }
+    case "bytes": {
+      const rawVar = `${sanitizeIdentifier(field.name)}Raw`;
       return [
         indent("lengthResult = __pb_readVarint(bytes, cursor)", indentLevel),
         indent("cursor = lengthResult.nextIndex", indentLevel),
         indent("dataLength = lengthResult.value", indentLevel),
-        indent("rawBytes = __pb_readBytes(bytes, cursor, dataLength)", indentLevel),
+        indent(`${rawVar} = __pb_readBytes(bytes, cursor, dataLength)`, indentLevel),
         indent("cursor = cursor + dataLength", indentLevel),
-        indent(`message.${fieldName} = __pb_byteArrayToBase64(rawBytes)`, indentLevel)
+        indent(`${valueVar} = __pb_byteArrayToBase64(${rawVar})`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "string":
+    }
+    case "string": {
       return [
         indent("lengthResult = __pb_readVarint(bytes, cursor)", indentLevel),
         indent("cursor = lengthResult.nextIndex", indentLevel),
         indent("strLength = lengthResult.value", indentLevel),
-        indent("fieldValue = __pb_readString(bytes, cursor, strLength)", indentLevel),
+        indent(`${valueVar} = __pb_readString(bytes, cursor, strLength)`, indentLevel),
         indent("cursor = cursor + strLength", indentLevel),
-        indent(`message.${fieldName} = fieldValue`, indentLevel)
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "float":
+    }
+    case "float": {
       return [
         indent("floatResult = __pb_readFloat32(bytes, cursor)", indentLevel),
         indent("cursor = floatResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = floatResult.value`, indentLevel)
+        indent(`${valueVar} = floatResult.value`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "double":
+    }
+    case "double": {
       return [
         indent("doubleResult = __pb_readFloat64(bytes, cursor)", indentLevel),
         indent("cursor = doubleResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = doubleResult.value`, indentLevel)
+        indent(`${valueVar} = doubleResult.value`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "fixed32":
+    }
+    case "fixed32": {
       return [
         indent("fixedResult = __pb_readFixed32(bytes, cursor)", indentLevel),
         indent("cursor = fixedResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = __pb_toUnsigned32(fixedResult.value)`, indentLevel)
+        indent(`${valueVar} = __pb_toUnsigned32(fixedResult.value)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "sfixed32":
+    }
+    case "sfixed32": {
       return [
         indent("fixedResult = __pb_readFixed32(bytes, cursor)", indentLevel),
         indent("cursor = fixedResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = __pb_toSigned32(fixedResult.value)`, indentLevel)
+        indent(`${valueVar} = __pb_toSigned32(fixedResult.value)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "fixed64":
+    }
+    case "fixed64": {
       return [
         indent("fixedResult = __pb_readFixed64(bytes, cursor)", indentLevel),
         indent("cursor = fixedResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = fixedResult.value`, indentLevel)
+        indent(`${valueVar} = fixedResult.value`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
-    case "sfixed64":
+    }
+    case "sfixed64": {
       return [
         indent("fixedResult = __pb_readFixed64(bytes, cursor)", indentLevel),
         indent("cursor = fixedResult.nextIndex", indentLevel),
-        indent(`message.${fieldName} = __pb_toSignedInt64String(fixedResult.value)`, indentLevel)
+        indent(`${valueVar} = __pb_toSignedInt64String(fixedResult.value)`, indentLevel),
+        ...renderMessageFieldAssignments(field, valueVar, indentLevel)
       ];
+    }
     case "enum":
       throw new Error("Enum handled separately");
   }
@@ -1021,13 +1094,13 @@ function renderEnumDecodeBody(descriptor: MessageDescriptor, field: Extract<Mess
 
   if (field.isRepeated) {
     lines.push(indent(`${valuesVar} = invalid`, indentLevel));
-    lines.push(indent('if GetInterface(message, "ifAssociativeArray") <> invalid and message.DoesExist("' + field.name + '") then', indentLevel));
-    lines.push(indent(`${valuesVar} = message.${field.name}`, indentLevel + 1));
+    lines.push(indent('if GetInterface(message, "ifAssociativeArray") <> invalid then', indentLevel));
+    lines.push(...renderAssociativeLookupForDirect(field, valuesVar, indentLevel + 1));
     lines.push(indent("end if", indentLevel));
     lines.push(indent(`if ${valuesVar} = invalid then`, indentLevel));
     lines.push(indent(`${valuesVar} = CreateObject("roArray", 0, true)`, indentLevel + 1));
-    lines.push(indent(`message.${field.name} = ${valuesVar}`, indentLevel + 1));
     lines.push(indent("end if", indentLevel));
+    lines.push(...renderMessageFieldAssignments(field, valuesVar, indentLevel));
     lines.push(indent(`if wireType = ${elementWireType}`, indentLevel));
     lines.push(indent("valueResult = __pb_readVarint64(bytes, cursor)", indentLevel + 1));
     lines.push(indent("cursor = valueResult.nextIndex", indentLevel + 1));
@@ -1053,7 +1126,9 @@ function renderEnumDecodeBody(descriptor: MessageDescriptor, field: Extract<Mess
     lines.push(indent("valueResult = __pb_readVarint64(bytes, cursor)", indentLevel + 1));
     lines.push(indent("cursor = valueResult.nextIndex", indentLevel + 1));
     lines.push(indent("numericValue = __pb_toSigned32FromString(valueResult.value)", indentLevel + 1));
-    lines.push(indent(`message.${field.name} = ${enumNameFn}(numericValue)`, indentLevel + 1));
+    const enumVar = `${sanitizeIdentifier(field.name)}EnumValue`;
+    lines.push(indent(`${enumVar} = ${enumNameFn}(numericValue)`, indentLevel + 1));
+    lines.push(...renderMessageFieldAssignments(field, enumVar, indentLevel + 1));
     lines.push(indent("else", indentLevel));
     lines.push(...renderUnknownFieldHandler(indentLevel + 1));
     lines.push(indent("end if", indentLevel));

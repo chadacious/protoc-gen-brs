@@ -55,6 +55,7 @@ export type MessageFieldDescriptor =
 interface MessageFieldDescriptorBase {
   field: Field;
   name: string;
+  camelName: string;
   id: number;
   kind: FieldKind;
   isRepeated: boolean;
@@ -283,6 +284,7 @@ function createFieldDescriptor(parent: Type, field: Field): MessageFieldDescript
   const base: Omit<MessageFieldDescriptorBase, "kind"> = {
     field,
     name: field.name,
+    camelName: toCamelCase(field.name),
     id: field.id,
     isRepeated: field.repeated === true,
     isRequired: field.required === true,
@@ -409,4 +411,21 @@ function computeTag(fieldId: number, wireType: number): number {
 function isMapEntry(type: Type): boolean {
   const options = type.options as Record<string, unknown> | undefined;
   return options?.mapEntry === true || options?.map_entry === true;
+}
+
+function toCamelCase(name: string): string {
+  if (!name.includes("_")) {
+    const first = name.slice(0, 1);
+    return first.toLowerCase() + name.slice(1);
+  }
+  const parts = name.split("_").filter((part) => part.length > 0);
+  if (parts.length === 0) {
+    return name;
+  }
+  const [first, ...rest] = parts;
+  const head = first.length > 0 ? first[0].toLowerCase() + first.slice(1) : "";
+  const tail = rest
+    .map((part) => (part.length > 0 ? part[0].toUpperCase() + part.slice(1) : ""))
+    .join("");
+  return `${head}${tail}`;
 }

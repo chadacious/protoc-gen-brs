@@ -1,7 +1,7 @@
 import path from "node:path";
 import { Buffer } from "node:buffer";
 import fs from "fs-extra";
-import { Writer } from "protobufjs";
+import { Writer, Root } from "protobufjs";
 import { loadProtoBundle } from "./protoLoader";
 import {
   collectSimpleScalarMessages,
@@ -33,6 +33,8 @@ const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
 
 type SamplePrimitive = string | number | boolean | Record<string, unknown>;
 type SampleValue = SamplePrimitive | SamplePrimitive[];
+
+const CUSTOM_BASELINE_DIR = path.resolve("fixtures/parity");
 
 export interface GenerateBaselineOptions {
   protoPaths: string[];
@@ -108,11 +110,14 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
       });
     }
   }
+  const customCases = await loadCustomBaselineCases(bundle.root);
+
   const metadataPath = path.join(outputDir, "baseline.json");
-  const metadata = {
+  const metadata: BaselineDocument = {
     generatedAt: new Date().toISOString(),
     files: bundle.files,
-    cases
+    cases,
+    customCases
   };
 
   await fs.writeJson(metadataPath, metadata, { spaces: 2 });
@@ -140,6 +145,78 @@ interface BaselineDocument {
   generatedAt: string;
   files: string[];
   cases: BaselineCase[];
+  customCases?: CustomBaselineCase[];
+}
+
+interface CustomBaselineCase {
+  protoType: string;
+  sampleLabel: string;
+  value: Record<string, unknown>;
+  encodedBase64: string;
+  decoded: Record<string, unknown>;
+}
+
+interface CustomBaselineFile {
+  protoType: string;
+  sampleLabel?: string;
+  value: Record<string, unknown>;
+}
+
+async function loadCustomBaselineCases(root: Root): Promise<CustomBaselineCase[]> {
+  const cases: CustomBaselineCase[] = [];
+  if (!(await fs.pathExists(CUSTOM_BASELINE_DIR))) {
+    return cases;
+  }
+  const entries = await fs.readdir(CUSTOM_BASELINE_DIR);
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const filePath = path.join(CUSTOM_BASELINE_DIR, entry);
+    const raw = await fs.readFile(filePath, "utf8");
+    let parsed: CustomBaselineFile;
+    try {
+      parsed = JSON.parse(raw) as CustomBaselineFile;
+    } catch (error) {
+      throw new Error(`Failed to parse custom baseline "${filePath}": ${(error as Error).message}`);
+    }
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error(`Invalid custom baseline structure in "${filePath}"`);
+    }
+    if (typeof parsed.protoType !== "string" || parsed.protoType.length === 0) {
+      throw new Error(`Custom baseline "${filePath}" is missing a valid "protoType" string`);
+    }
+    if (parsed.value === null || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+      throw new Error(`Custom baseline "${filePath}" must provide an object "value"`);
+    }
+
+    const sampleLabel =
+      typeof parsed.sampleLabel === "string" && parsed.sampleLabel.length > 0
+        ? parsed.sampleLabel
+        : path.basename(entry, ".json");
+
+    let type;
+    try {
+      type = root.lookupType(parsed.protoType);
+    } catch (error) {
+      console.warn(`Skipping custom baseline "${filePath}": ${(error as Error).message}`);
+      continue;
+    }
+    const message = type.fromObject(parsed.value);
+    const encodedBuffer = type.encode(message).finish();
+    const encodedBase64 = Buffer.from(encodedBuffer).toString("base64");
+    const decodedMessage = type.decode(encodedBuffer);
+    const decoded = type.toObject(decodedMessage, { longs: String, enums: String, bytes: String });
+
+    cases.push({
+      protoType: parsed.protoType,
+      sampleLabel,
+      value: parsed.value,
+      encodedBase64,
+      decoded
+    });
+  }
+  return cases;
 }
 
 function renderBaselineBrightScript(document: BaselineDocument): string {
@@ -179,6 +256,18 @@ function renderBaselineBrightScript(document: BaselineDocument): string {
     }
 
     lines.push(`    data.cases.Push(${caseIdentifier})`);
+  });
+
+  lines.push("    data.customCases = []");
+  (document.customCases ?? []).forEach((customCase, index) => {
+    const identifier = `custom${index}`;
+    lines.push(`    ${identifier} = {}`);
+    lines.push(`    ${identifier}.protoType = "${escapeBrsString(customCase.protoType)}"`);
+    lines.push(`    ${identifier}.sampleLabel = "${escapeBrsString(customCase.sampleLabel)}"`);
+    lines.push(`    ${identifier}.value = ${formatBrsValue(customCase.value)}`);
+    lines.push(`    ${identifier}.encodedBase64 = "${customCase.encodedBase64}"`);
+    lines.push(`    ${identifier}.decoded = ${formatBrsValue(customCase.decoded)}`);
+    lines.push(`    data.customCases.Push(${identifier})`);
   });
 
   lines.push("    return data", "end function", "");
@@ -675,7 +764,7 @@ function buildSint64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ 
 }
 
 function escapeBrsString(value: string): string {
-  return value.replace(/\"/g, "\"\"");
+  return value.replace(/\\/g, "\\\\").replace(/\"/g, "\"\"");
 }
 
 function formatBrsValue(value: unknown): string {

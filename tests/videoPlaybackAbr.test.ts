@@ -55,8 +55,8 @@ const SAMPLE_OBJECT: SamplePayload = {
       },
       start_time_ms: "0",
       duration_ms: "2147483647",
-      start_segment_index: 2147483000,
-      end_segment_index: 2147483000,
+      start_segment_index: 2147483008,
+      end_segment_index: 2147483008,
       time_range: {
         duration_ticks: "2147483647",
         start_ticks: "0",
@@ -82,7 +82,6 @@ const SAMPLE_OBJECT: SamplePayload = {
       last_modified: "1759475866788004"
     }
   ],
-  preferred_subtitle_format_ids: [],
   streamer_context: {
     client_info: {
       os_name: "Windows",
@@ -92,9 +91,28 @@ const SAMPLE_OBJECT: SamplePayload = {
     },
     sabr_contexts: [],
     unsent_sabr_contexts: []
-  },
-  field1000: []
+  }
 };
+
+function toCamelCaseKey(key: string): string {
+  return key.replace(/_([a-zA-Z0-9])/g, (_, next: string) => next.toUpperCase());
+}
+
+function convertKeysToCamelCase(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => convertKeysToCamelCase(item));
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+      result[toCamelCaseKey(key)] = convertKeysToCamelCase(inner);
+    }
+    return result;
+  }
+  return value;
+}
+
+const SAMPLE_OBJECT_CAMEL = convertKeysToCamelCase(SAMPLE_OBJECT) as SamplePayload;
 
 let byteArrayRegistered = false;
 
@@ -399,6 +417,15 @@ async function run() {
   const encoded = callBrsFunction(encodeFn, interpreter, [brsMessage]) as BrsTypes.BrsString;
   const encodedBase64 = encoded.toString();
   assert.strictEqual(encodedBase64, expectedBase64, "BrightScript encode should match protobufjs output");
+
+  const camelCaseMessage = jsToBrs(SAMPLE_OBJECT_CAMEL);
+  const camelEncoded = callBrsFunction(encodeFn, interpreter, [camelCaseMessage]) as BrsTypes.BrsString;
+  const camelEncodedBase64 = camelEncoded.toString();
+  assert.strictEqual(
+    camelEncodedBase64,
+    expectedBase64,
+    "BrightScript encode should match protobufjs output when using camelCase keys"
+  );
 
   const decoded = callBrsFunction(decodeFn, interpreter, [new BrsTypes.BrsString(expectedBase64)]);
   const decodedJs = brsToJs(decoded);

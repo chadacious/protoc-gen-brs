@@ -109,8 +109,14 @@ sub Main()
         print "  duration:  "; caseTimer.TotalMilliseconds(); " ms"
     end for
 
-    videoTestPassed = RunVideoPlaybackAbrParityTest(handlers)
+    videoTestPassed = RunVideoPlaybackAbrParityTest(handlers, baseline)
     if videoTestPassed = true then
+        passed = passed + 1
+    end if
+    total = total + 1
+
+    camelVideoTestPassed = RunVideoPlaybackAbrCamelCaseParityTest(handlers, baseline)
+    if camelVideoTestPassed = true then
         passed = passed + 1
     end if
     total = total + 1
@@ -119,8 +125,25 @@ sub Main()
     print "Total duration: "; runTimer.TotalMilliseconds(); " ms"
 end sub
 
-function RunVideoPlaybackAbrParityTest(handlers as Object) as Boolean
-    print "Verifying complex message via VideoPlaybackAbrRequest parity"
+function RunVideoPlaybackAbrParityTest(handlers as Object, baseline as Object) as Boolean
+    sample = CreateVideoPlaybackAbrSample()
+    customCase = FindCustomBaselineCase(baseline, "video_streaming.VideoPlaybackAbrRequest", "snake_case parity")
+    return RunVideoPlaybackAbrParityTestInternal(handlers, sample, customCase, "snake_case input")
+end function
+
+function RunVideoPlaybackAbrCamelCaseParityTest(handlers as Object, baseline as Object) as Boolean
+    camelSample = CreateVideoPlaybackAbrSampleCamelCase()
+    customCase = FindCustomBaselineCase(baseline, "video_streaming.VideoPlaybackAbrRequest", "snake_case parity")
+    return RunVideoPlaybackAbrParityTestInternal(handlers, camelSample, customCase, "camelCase input")
+end function
+
+function RunVideoPlaybackAbrParityTestInternal(handlers as Object, encodeSample as Object, baselineCase as Object, label as String) as Boolean
+    prefix = "Verifying complex message via VideoPlaybackAbrRequest parity"
+    if label <> invalid and label <> "" then
+        print prefix; " ["; label; "]"
+    else
+        print prefix
+    end if
     timer = CreateObject("roTimespan")
     timer.Mark()
 
@@ -140,14 +163,21 @@ function RunVideoPlaybackAbrParityTest(handlers as Object) as Boolean
         return false
     end if
 
-    sample = CreateVideoPlaybackAbrSample()
-    expectedEncoded = "CiCAAbgIqAG4CLABALgB8I+uAuABAJ0CAACAP8ACAvACABIMCIwBEJeNgKW7h5ADGi8KDAiMARCXjYClu4eQAxAAGP////8HIID7//8HKID7//8HMgsIABD/////BxjoB4IBDAiMARCXjYClu4eQA4oBDAiPAxCkwZ+wvoeQA5oBKQongAEBigEQMi4yMDI1MDIyMi4xMC4wMJIBB1dpbmRvd3OaAQQxMC4w"
+    if baselineCase = invalid then
+        print "  FAIL"
+        print "    baseline case not found"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
 
-    runtimeEncoded = handler.encode(sample)
+    expectedEncoded = baselineCase.encodedBase64
+    expectedDecoded = baselineCase.decoded
+
+    runtimeEncoded = handler.encode(encodeSample)
     decodedResult = handler.decode(expectedEncoded)
 
     encodeMatch = runtimeEncoded = expectedEncoded
-    expectedJson = FormatJson(sample)
+    expectedJson = FormatJson(expectedDecoded)
     actualJson = FormatJson(decodedResult)
     decodeMatch = (expectedJson = actualJson)
 
@@ -166,10 +196,32 @@ function RunVideoPlaybackAbrParityTest(handlers as Object) as Boolean
         print "    decoded value mismatch"
         print "    expected json: " + expectedJson
         print "    runtime  json: " + actualJson
-        LogMismatchDetails(sample, expectedEncoded, runtimeEncoded, sample, decodedResult)
+        diag = { type: baselineCase.protoType, field: "(full message)", fieldId: -1, sampleLabel: label }
+        LogMismatchDetails(diag, expectedEncoded, runtimeEncoded, expectedDecoded, decodedResult)
     end if
     print "  duration:  "; timer.TotalMilliseconds(); " ms"
     return false
+end function
+
+function FindCustomBaselineCase(baseline as Object, protoType as String, sampleLabel as String) as Object
+    if baseline = invalid then return invalid
+    if GetInterface(baseline, "ifAssociativeArray") = invalid then return invalid
+    cases = baseline.Lookup("customCases")
+    if GetInterface(cases, "ifArray") = invalid then return invalid
+    targetProto = protoType
+    targetLabel = sampleLabel
+    for each entry in cases
+        if entry <> invalid then
+            entryProto = "" + entry.protoType
+            entryLabel = "" + entry.sampleLabel
+            if entryProto = targetProto then
+                if targetLabel = "" or entryLabel = targetLabel then
+                    return entry
+                end if
+            end if
+        end if
+    end for
+    return invalid
 end function
 
 function CreateVideoPlaybackAbrSample() as Object
@@ -223,7 +275,67 @@ function CreateVideoPlaybackAbrSample() as Object
     clientInfo.client_name = 1
     clientInfo.client_version = "2.20250222.10.00"
     streamerContext.client_info = clientInfo
+    streamerContext.sabr_contexts = CreateObject("roArray", 0, true)
+    streamerContext.unsent_sabr_contexts = CreateObject("roArray", 0, true)
     sample.streamer_context = streamerContext
+
+    return sample
+end function
+
+function CreateVideoPlaybackAbrSampleCamelCase() as Object
+    sample = {}
+
+    abrState = {}
+    abrState.playbackRate = 1
+    abrState.playerTimeMs = "0"
+    abrState.clientViewportIsFlexible = false
+    abrState.bandwidthEstimate = "4950000"
+    abrState.drcEnabled = false
+    abrState.enabledTrackTypesBitfield = 2
+    abrState.stickyResolution = 1080
+    abrState.lastManualSelectedResolution = 1080
+    sample.clientAbrState = abrState
+
+    bufferedRanges = CreateObject("roArray", 0, true)
+    range = {}
+    formatId = {}
+    formatId.itag = 140
+    formatId.lastModified = "1759475037898391"
+    range.formatId = formatId
+    range.startTimeMs = "0"
+    range.durationMs = "2147483647"
+    range.startSegmentIndex = 2147483008
+    range.endSegmentIndex = 2147483008
+    timeRange = {}
+    timeRange.durationTicks = "2147483647"
+    timeRange.startTicks = "0"
+    timeRange.timescale = 1000
+    range.timeRange = timeRange
+    bufferedRanges.Push(range)
+    sample.bufferedRanges = bufferedRanges
+
+    selectedFormatIds = CreateObject("roArray", 0, true)
+    selectedFormatIds.Push(CloneFormatIdCamel(140, "1759475037898391"))
+    sample.selectedFormatIds = selectedFormatIds
+
+    preferredAudio = CreateObject("roArray", 0, true)
+    preferredAudio.Push(CloneFormatIdCamel(140, "1759475037898391"))
+    sample.preferredAudioFormatIds = preferredAudio
+
+    preferredVideo = CreateObject("roArray", 0, true)
+    preferredVideo.Push(CloneFormatIdCamel(399, "1759475866788004"))
+    sample.preferredVideoFormatIds = preferredVideo
+
+    streamerContext = {}
+    clientInfo = {}
+    clientInfo.osName = "Windows"
+    clientInfo.osVersion = "10.0"
+    clientInfo.clientName = 1
+    clientInfo.clientVersion = "2.20250222.10.00"
+    streamerContext.clientInfo = clientInfo
+    streamerContext.sabrContexts = CreateObject("roArray", 0, true)
+    streamerContext.unsentSabrContexts = CreateObject("roArray", 0, true)
+    sample.streamerContext = streamerContext
 
     return sample
 end function
@@ -232,6 +344,13 @@ function CloneFormatId(itag as Integer, lastModified as String) as Object
     id = {}
     id.itag = itag
     id.last_modified = lastModified
+    return id
+end function
+
+function CloneFormatIdCamel(itag as Integer, lastModified as String) as Object
+    id = {}
+    id.itag = itag
+    id.lastModified = lastModified
     return id
 end function
 

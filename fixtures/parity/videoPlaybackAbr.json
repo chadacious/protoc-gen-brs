@@ -1,0 +1,61 @@
+{
+  "protoType": "video_streaming.VideoPlaybackAbrRequest",
+  "sampleLabel": "snake_case parity",
+  "value": {
+    "client_abr_state": {
+      "playback_rate": 1,
+      "player_time_ms": "0",
+      "client_viewport_is_flexible": false,
+      "bandwidth_estimate": "4950000",
+      "drc_enabled": false,
+      "enabled_track_types_bitfield": 2,
+      "sticky_resolution": 1080,
+      "last_manual_selected_resolution": 1080
+    },
+    "buffered_ranges": [
+      {
+        "format_id": {
+          "itag": 140,
+          "last_modified": "1759475037898391"
+        },
+        "start_time_ms": "0",
+        "duration_ms": "2147483647",
+        "start_segment_index": 2147483008,
+        "end_segment_index": 2147483008,
+        "time_range": {
+          "duration_ticks": "2147483647",
+          "start_ticks": "0",
+          "timescale": 1000
+        }
+      }
+    ],
+    "selected_format_ids": [
+      {
+        "itag": 140,
+        "last_modified": "1759475037898391"
+      }
+    ],
+    "preferred_audio_format_ids": [
+      {
+        "itag": 140,
+        "last_modified": "1759475037898391"
+      }
+    ],
+    "preferred_video_format_ids": [
+      {
+        "itag": 399,
+        "last_modified": "1759475866788004"
+      }
+    ],
+    "streamer_context": {
+      "client_info": {
+        "os_name": "Windows",
+        "os_version": "10.0",
+        "client_name": 1,
+        "client_version": "2.20250222.10.00"
+      },
+      "sabr_contexts": [],
+      "unsent_sabr_contexts": []
+    }
+  }
+}
