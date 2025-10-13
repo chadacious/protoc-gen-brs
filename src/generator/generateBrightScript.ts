@@ -141,6 +141,17 @@ function renderEncodeFunction(descriptor: MessageDescriptor): string[] {
   const fnName = `${descriptor.name}Encode`;
 
   lines.push(`function ${fnName}(message as Object) as String`);
+  const needsNormalization = descriptor.fields.some((field) => field.camelName !== field.name);
+  if (needsNormalization) {
+    lines.push(indent("fieldMap = {}", 1));
+    descriptor.fields
+      .filter((field) => field.camelName !== field.name)
+      .forEach((field) => {
+        lines.push(indent(`fieldMap["${field.name}"] = "${field.camelName}"`, 1));
+      });
+    lines.push(indent("message = __pb_normalizeMessageKeys(message, fieldMap)", 1));
+    lines.push("");
+  }
   lines.push(indent("bytes = __pb_createByteArray()", 1));
 
   descriptor.fields.forEach((field, index) => {
@@ -309,19 +320,20 @@ function renderScalarSingleWrite(
   switch (scalarType) {
     case "int32":
       return [
-        indent(`normalized = Int(${sourceVar})`, indentLevel),
+        indent(`normalized = __pb_normalizeSigned32(${sourceVar})`, indentLevel),
         indent(`__pb_writeVarint(bytes, ${tag})`, indentLevel),
         indent("__pb_writeVarint(bytes, normalized)", indentLevel)
       ];
     case "uint32":
       return [
+        indent(`normalized = __pb_normalizeUnsigned32(${sourceVar})`, indentLevel),
         indent(`__pb_writeVarint(bytes, ${tag})`, indentLevel),
-        indent(`__pb_writeVarint64(bytes, ${sourceVar})`, indentLevel)
+        indent("__pb_writeVarint64(bytes, normalized)", indentLevel)
       ];
     case "sint32":
       return [
-        indent(`normalized = Int(${sourceVar})`, indentLevel),
-        indent("encoded = __pb_encodeZigZag32(normalized)", indentLevel),
+        indent(`normalized = __pb_normalizeSigned32(${sourceVar})`, indentLevel),
+        indent("encoded = __pb_encodeZigZag32FromString(normalized)", indentLevel),
         indent(`__pb_writeVarint(bytes, ${tag})`, indentLevel),
         indent("__pb_writeVarint64(bytes, encoded)", indentLevel)
       ];
@@ -432,19 +444,20 @@ function renderScalarUnpackedWrite(
   switch (scalarType) {
     case "int32":
       return [
-        indent(`normalized = Int(${sourceVar})`, indentLevel),
+        indent(`normalized = __pb_normalizeSigned32(${sourceVar})`, indentLevel),
         indent(`__pb_writeVarint(bytes, ${tag})`, indentLevel),
         indent("__pb_writeVarint(bytes, normalized)", indentLevel)
       ];
     case "uint32":
       return [
+        indent(`normalized = __pb_normalizeUnsigned32(${sourceVar})`, indentLevel),
         indent(`__pb_writeVarint(bytes, ${tag})`, indentLevel),
-        indent(`__pb_writeVarint64(bytes, ${sourceVar})`, indentLevel)
+        indent("__pb_writeVarint64(bytes, normalized)", indentLevel)
       ];
     case "sint32":
       return [
-        indent(`normalized = Int(${sourceVar})`, indentLevel),
-        indent("encoded = __pb_encodeZigZag32(normalized)", indentLevel),
+        indent(`normalized = __pb_normalizeSigned32(${sourceVar})`, indentLevel),
+        indent("encoded = __pb_encodeZigZag32FromString(normalized)", indentLevel),
         indent(`__pb_writeVarint(bytes, ${tag})`, indentLevel),
         indent("__pb_writeVarint64(bytes, encoded)", indentLevel)
       ];
@@ -555,15 +568,18 @@ function renderScalarPackedWrite(
   switch (scalarType) {
     case "int32":
       return [
-        indent(`normalized = Int(${sourceVar})`, indentLevel),
+        indent(`normalized = __pb_normalizeSigned32(${sourceVar})`, indentLevel),
         indent(`__pb_writeVarint(${targetVar}, normalized)`, indentLevel)
       ];
     case "uint32":
-      return [indent(`__pb_writeVarint64(${targetVar}, ${sourceVar})`, indentLevel)];
+      return [
+        indent(`normalized = __pb_normalizeUnsigned32(${sourceVar})`, indentLevel),
+        indent(`__pb_writeVarint64(${targetVar}, normalized)`, indentLevel)
+      ];
     case "sint32":
       return [
-        indent(`normalized = Int(${sourceVar})`, indentLevel),
-        indent("encoded = __pb_encodeZigZag32(normalized)", indentLevel),
+        indent(`normalized = __pb_normalizeSigned32(${sourceVar})`, indentLevel),
+        indent("encoded = __pb_encodeZigZag32FromString(normalized)", indentLevel),
         indent(`__pb_writeVarint64(${targetVar}, encoded)`, indentLevel)
       ];
     case "int64":
@@ -820,18 +836,16 @@ function renderScalarRepeatedDecode(
   lines.push(indent("end if", indentLevel));
   lines.push(...renderMessageFieldAssignments(field, valuesVar, indentLevel));
 
-  lines.push(indent(`if wireType = ${elementWireType}`, indentLevel));
+  lines.push(indent(`if wireType = ${elementWireType} then`, indentLevel));
   lines.push(...renderScalarRepeatedElementRead(scalarType, valuesVar, indentLevel + 1));
 
-  if (field.isPacked) {
-    lines.push(indent("else if wireType = 2 then", indentLevel));
-    lines.push(indent("lengthResult = __pb_readVarint(bytes, cursor)", indentLevel + 1));
-    lines.push(indent("cursor = lengthResult.nextIndex", indentLevel + 1));
-    lines.push(indent(`${packEndVar} = cursor + lengthResult.value`, indentLevel + 1));
-    lines.push(indent(`while cursor < ${packEndVar}`, indentLevel + 1));
-    lines.push(...renderScalarRepeatedElementRead(scalarType, valuesVar, indentLevel + 2));
-    lines.push(indent("end while", indentLevel + 1));
-  }
+  lines.push(indent("else if wireType = 2 then", indentLevel));
+  lines.push(indent("lengthResult = __pb_readVarint(bytes, cursor)", indentLevel + 1));
+  lines.push(indent("cursor = lengthResult.nextIndex", indentLevel + 1));
+  lines.push(indent(`${packEndVar} = cursor + lengthResult.value`, indentLevel + 1));
+  lines.push(indent(`while cursor < ${packEndVar}`, indentLevel + 1));
+  lines.push(...renderScalarRepeatedElementRead(scalarType, valuesVar, indentLevel + 2));
+  lines.push(indent("end while", indentLevel + 1));
 
   lines.push(indent("else", indentLevel));
   lines.push(...renderUnknownFieldHandler(indentLevel + 1));
@@ -1101,7 +1115,7 @@ function renderEnumDecodeBody(descriptor: MessageDescriptor, field: Extract<Mess
     lines.push(indent(`${valuesVar} = CreateObject("roArray", 0, true)`, indentLevel + 1));
     lines.push(indent("end if", indentLevel));
     lines.push(...renderMessageFieldAssignments(field, valuesVar, indentLevel));
-    lines.push(indent(`if wireType = ${elementWireType}`, indentLevel));
+    lines.push(indent(`if wireType = ${elementWireType} then`, indentLevel));
     lines.push(indent("valueResult = __pb_readVarint64(bytes, cursor)", indentLevel + 1));
     lines.push(indent("cursor = valueResult.nextIndex", indentLevel + 1));
     lines.push(indent("numericValue = __pb_toSigned32FromString(valueResult.value)", indentLevel + 1));

@@ -1,6 +1,7 @@
 /// <reference path="./brs-augmentations.d.ts" />
 
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -36,66 +37,15 @@ interface SamplePayload {
 
 type BrightScriptValue = any;
 
-const SAMPLE_OBJECT: SamplePayload = {
-  client_abr_state: {
-    playback_rate: 1,
-    player_time_ms: "0",
-    client_viewport_is_flexible: false,
-    bandwidth_estimate: "4950000",
-    drc_enabled: false,
-    enabled_track_types_bitfield: 2,
-    sticky_resolution: 1080,
-    last_manual_selected_resolution: 1080
-  },
-  buffered_ranges: [
-    {
-      format_id: {
-        itag: 140,
-        last_modified: "1759475037898391"
-      },
-      start_time_ms: "0",
-      duration_ms: "2147483647",
-      start_segment_index: 2147483008,
-      end_segment_index: 2147483008,
-      time_range: {
-        duration_ticks: "2147483647",
-        start_ticks: "0",
-        timescale: 1000
-      }
-    }
-  ],
-  selected_format_ids: [
-    {
-      itag: 140,
-      last_modified: "1759475037898391"
-    }
-  ],
-  preferred_audio_format_ids: [
-    {
-      itag: 140,
-      last_modified: "1759475037898391"
-    }
-  ],
-  preferred_video_format_ids: [
-    {
-      itag: 399,
-      last_modified: "1759475866788004"
-    }
-  ],
-  streamer_context: {
-    client_info: {
-      os_name: "Windows",
-      os_version: "10.0",
-      client_name: 1,
-      client_version: "2.20250222.10.00"
-    },
-    sabr_contexts: [],
-    unsent_sabr_contexts: []
-  }
-};
-
 function toCamelCaseKey(key: string): string {
   return key.replace(/_([a-zA-Z0-9])/g, (_, next: string) => next.toUpperCase());
+}
+
+function toSnakeCaseKey(key: string): string {
+  return key
+    .replace(/([A-Z])/g, "_$1")
+    .replace(/__+/g, "_")
+    .toLowerCase();
 }
 
 function convertKeysToCamelCase(value: unknown): unknown {
@@ -112,7 +62,292 @@ function convertKeysToCamelCase(value: unknown): unknown {
   return value;
 }
 
-const SAMPLE_OBJECT_CAMEL = convertKeysToCamelCase(SAMPLE_OBJECT) as SamplePayload;
+function convertKeysToSnakeCase(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => convertKeysToSnakeCase(item));
+  }
+  if (isTypedArray(value)) {
+    if (value instanceof Buffer) {
+      return Uint8Array.from(value);
+    }
+    return new Uint8Array(value as Uint8Array);
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+      result[toSnakeCaseKey(key)] = convertKeysToSnakeCase(inner);
+    }
+    return result;
+  }
+  return value;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function tryConvertNumericMapToUint8Array(value: Record<string, unknown>): Uint8Array | null {
+  const entries = Object.entries(value);
+  if (entries.length === 0) {
+    return new Uint8Array(0);
+  }
+  if (
+    !entries.every(
+      ([key, byte]) =>
+        /^[0-9]+$/.test(key) &&
+        typeof byte === "number" &&
+        Number.isInteger(byte) &&
+        byte >= 0 &&
+        byte <= 255
+    )
+  ) {
+    return null;
+  }
+  const sorted = entries.sort((a, b) => Number(a[0]) - Number(b[0]));
+  const buffer = new Uint8Array(sorted.length);
+  for (const [index, [, byte]] of sorted.entries()) {
+    buffer[index] = byte as number;
+  }
+  return buffer;
+}
+
+function hydrateSamplePayload(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => hydrateSamplePayload(item));
+  }
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  const asBytes = tryConvertNumericMapToUint8Array(value);
+  if (asBytes !== null) {
+    return asBytes;
+  }
+  const result: Record<string, unknown> = {};
+  for (const [key, inner] of Object.entries(value)) {
+    result[key] = hydrateSamplePayload(inner);
+  }
+  return result;
+}
+
+const ABR_SAMPLE_PATH = path.resolve(__dirname, "../examples/abr-sample.json");
+
+const LONG_FIELD_TYPES = new Set(["int64", "uint64", "sint64", "fixed64", "sfixed64"]);
+const NUMERIC_FIELD_TYPES = new Set([
+  "int32",
+  "uint32",
+  "sint32",
+  "fixed32",
+  "sfixed32",
+  "double",
+  "float"
+]);
+
+function normalizeNumericString(value: string, fieldType: string): string {
+  let text = value.trim();
+  if (text.startsWith("+")) {
+    text = text.slice(1);
+  }
+  const isNumericField = NUMERIC_FIELD_TYPES.has(fieldType) || LONG_FIELD_TYPES.has(fieldType);
+  if (!isNumericField) {
+    return text;
+  }
+  if (text.startsWith("-")) {
+    const magnitude = text.slice(1).replace(/^0+(?!$)/, "");
+    return magnitude.length === 0 ? "0" : "-" + magnitude;
+  }
+  const trimmed = text.replace(/^0+(?!$)/, "");
+  return trimmed.length === 0 ? "0" : trimmed;
+}
+
+function getComparableDefault(field: protobuf.Field, sample: unknown): unknown {
+  const base = field.defaultValue;
+  if (sample === undefined || sample === null) {
+    return base;
+  }
+  if (field.resolvedType && field.resolvedType instanceof protobuf.Enum) {
+    if (typeof sample === "string") {
+      if (typeof base === "number") {
+        return field.resolvedType.valuesById[base] ?? "";
+      }
+      if (typeof base === "string") {
+        return base;
+      }
+      return "";
+    }
+    if (typeof sample === "number") {
+      if (typeof base === "number") {
+        return base;
+      }
+      if (typeof base === "string") {
+        const numeric = field.resolvedType.values[base];
+        return numeric ?? Number(base);
+      }
+      return 0;
+    }
+    return base;
+  }
+  if (typeof sample === "boolean") {
+    return typeof base === "boolean" ? base : false;
+  }
+  if (typeof sample === "number") {
+    if (base && typeof (base as any).toNumber === "function") {
+      return (base as any).toNumber();
+    }
+    if (typeof base === "number") {
+      return base;
+    }
+    if (typeof base === "string") {
+      return Number(base);
+    }
+    return 0;
+  }
+  if (typeof sample === "string") {
+    if (field.type === "bytes") {
+      if (typeof base === "string") {
+        return base;
+      }
+      if (base instanceof Uint8Array) {
+        return Buffer.from(base).toString("base64");
+      }
+      return "";
+    }
+    if (LONG_FIELD_TYPES.has(field.type)) {
+      if (typeof base === "string") {
+        return normalizeNumericString(base, field.type);
+      }
+      if (typeof base === "number") {
+        return base.toString();
+      }
+      if (base && typeof (base as any).toString === "function") {
+        return normalizeNumericString((base as any).toString(), field.type);
+      }
+      return "0";
+    }
+    if (NUMERIC_FIELD_TYPES.has(field.type)) {
+      if (typeof base === "number") {
+        return base.toString();
+      }
+      if (typeof base === "string") {
+        return normalizeNumericString(base, field.type);
+      }
+      if (base && typeof (base as any).toString === "function") {
+        return normalizeNumericString((base as any).toString(), field.type);
+      }
+      return "0";
+    }
+    if (typeof base === "string") {
+      return base;
+    }
+    if (base === undefined || base === null) {
+      return "";
+    }
+    return String(base);
+  }
+  if (sample instanceof Uint8Array) {
+    if (base instanceof Uint8Array) {
+      return base;
+    }
+    if (typeof base === "string") {
+      return Buffer.from(base, "base64");
+    }
+    return new Uint8Array();
+  }
+  return base;
+}
+
+function isProtoDefault(field: protobuf.Field, value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return true;
+  }
+  const comparableDefault = getComparableDefault(field, value);
+  if (comparableDefault === undefined) {
+    return false;
+  }
+  if (typeof value === "string" && typeof comparableDefault === "string") {
+    const normalizedValue = normalizeNumericString(value, field.type);
+    const normalizedDefault = normalizeNumericString(comparableDefault, field.type);
+    return normalizedValue === normalizedDefault;
+  }
+  if (typeof value === "number" && typeof comparableDefault === "number") {
+    return Object.is(value, comparableDefault);
+  }
+  if (typeof value === "boolean" && typeof comparableDefault === "boolean") {
+    return value === comparableDefault;
+  }
+  if (value instanceof Uint8Array && comparableDefault instanceof Uint8Array) {
+    if (value.length !== comparableDefault.length) {
+      return false;
+    }
+    for (let i = 0; i < value.length; i += 1) {
+      if (value[i] !== comparableDefault[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return value === comparableDefault;
+}
+
+function stripProtoDefaults(messageType: protobuf.Type, rawValue: unknown): Record<string, unknown> {
+  if (rawValue === null || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+    return {};
+  }
+  const value = rawValue as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    const field = messageType.fields[key];
+    if (!field) {
+      result[key] = fieldValue;
+      continue;
+    }
+    if (field.repeated) {
+      if (!Array.isArray(fieldValue) || fieldValue.length === 0) {
+        continue;
+      }
+      if (field.resolvedType && field.resolvedType instanceof protobuf.Type) {
+        const nestedType = field.resolvedType as protobuf.Type;
+        result[key] = fieldValue.map((item) => stripProtoDefaults(nestedType, item));
+      } else {
+        result[key] = fieldValue;
+      }
+      continue;
+    }
+    if (field.map) {
+      if (fieldValue === null || typeof fieldValue !== "object") {
+        continue;
+      }
+      if (field.resolvedType && field.resolvedType instanceof protobuf.Type) {
+        const nestedType = field.resolvedType as protobuf.Type;
+        const mapResult: Record<string, unknown> = {};
+        for (const [entryKey, entryVal] of Object.entries(fieldValue as Record<string, unknown>)) {
+          mapResult[entryKey] = stripProtoDefaults(nestedType, entryVal);
+        }
+        result[key] = mapResult;
+      } else {
+        result[key] = fieldValue;
+      }
+      continue;
+    }
+    if (field.resolvedType && field.resolvedType instanceof protobuf.Type) {
+      if (fieldValue === undefined || fieldValue === null) {
+        continue;
+      }
+      const nested = stripProtoDefaults(field.resolvedType as protobuf.Type, fieldValue);
+      if (Object.keys(nested).length > 0) {
+        result[key] = nested;
+      }
+      continue;
+    }
+    if (isProtoDefault(field, fieldValue)) {
+      continue;
+    }
+    result[key] = fieldValue;
+  }
+  return result;
+}
+
+const EXPECTED_LIVE_BASE64 =
+  "CheAAbgIqAG4CLgBkK+oBJ0CAACAP8ACAhIMCIwBEJeNgKW7h5ADGisKDAiMARCXjYClu4eQAxj/////ByD/////Byj/////BzIJEP////8HGOgHKsAJCuoICucFCAAlAACAPy0zM3M/NT0Klz9YAWgBchoKFm1mczJfY21mc193ZWJfdjNfMl8wMDMYAHiPTqABAagBALgCANoCmwEQsOoBGIDd2wEgoJwBKKCcATCYdXCIJ4AB9AO4AQHgAQOYAgzAAgHQAgLoAgSAAwKIA4gnqAMDwAMByAMBgAQB0AQB2AQB4AQA+AQHgAV9wAUByAUB4AXQD+gFAfgF0A+ABgGQBgG4BgHQBgHwBgH4BgGAB9APwAcB0AcBgAgBiAgBnQjNzEw+oAjoB+AIAegI////////////AfoCtQEtAACgQjUAAKpCZQAAgEBowHCoAdCGA/0BAACAP4UCmpkZP40CAACAP5UC+u1rO7UCAACAP8AC3wPSAhGw//////////8BHjxGWlxdXugC6AL9As3MzD2QAwGdAwrXIz2gAwHVAwAAekSYBAHVBAAAIEHoBPAQoAYBtQa9N4Y1vQYzM4NAwAcByAcB5QcAgAlE8AcBgAgBoQgAAAAAAADwv6kIAAAAAAAA8L+wCN8DuAoB+BABggMAkAMBqAMBsAMD0AMB2AMBygQcChMIwKkHEJh1GOgHJQAAAAAoADAAEODUAxjQD9IEDwoICLAJELAJIAEgiCcoAdoEDQoGCPAuEPAuIPAuKAHwBQGYBgGoBoCAAtIGFAjoBxBkGg0IiCcVAAAAPx3NzEw/2AYBiAcBuAcBoAgB0ggGCAEQARgBqQkAAAAAAADwv7EJAAAAAAAA8L/QCQHaCSRFN2t1UnNsQUU0KzVkS3c3UVh3MFNJMXl1UnhxbUd5SmxJRTjqCwSLBowGgAwBqAyQAcAMAcgMAdAMAYANAYgNAdgNAeANAYAOAYgOAZgOAYgPAcgPAdAPAegQAYARAZARAbIRFENBTVNDaFVQdWJiSkRQd0VzUVk96BEB4BIB8BIB+BIBuBMBwBMB8BMBkRQAAAAAAADwv5kUAAAAAAAA8L+wFAHKFACIp6HKCwEYATIMCIkBELjYiP6+h5ADMgwI+AEQ+aP4icGHkAMyDAiPAxCkwZ+wvoeQAzIMCIgBEKvBubm+h5ADMgwI9wEQsZf2rMKHkAMyDAiOAxDDvtG0voeQAzIMCIcBEPu4o7m+h5ADMgwI9AEQycf/q8KHkAMyDAiNAxCZnIqwvoeQAzIMCIYBEImKkfe+h5ADMgwI8wEQraSDrMKHkAMyDAiMAxD5wduyvoeQAzIMCIUBEMrfrra+h5ADMgwI8gEQlsK9rMKHkAMyDAiLAxD72bK0voeQAzIMCKABELmgkLi+h5ADMgwIlgIQoNjprMKHkAMyDAiKAxCj1OCyvoeQAzIMCIwBEJeNgKW7h5ADMgwI+QEQwIix/LuHkAMyDAj6ARCTzav8u4eQAzIMCPsBENTJrPy7h5ADOgBIAFIqGgJlbigBMhhVQ3Q4VXRXakpBa1VUdmZOdDRhdWZrYmc4AEAAWABgAHgAoAEBsAEFugEDBAUxwgEIAQIDBAUIMF7QAQASTQA/FfG3MEYCIQD7A417/f3b1SiwINyvpwKCIGCfP67AX4uBNq2EyH7UeAIhAOC71fOkiaXyEWZoUox4SAIARbH1vpu8rGmvyZrwLmgNGgJlaYIBDAiMARCXjYClu4eQA4oBDAiPAxCkwZ+wvoeQA5oBZwongAEBigEQMi4yMDI1MDIyMi4xMC4wMJIBB1dpbmRvd3OaAQQxMC4wEjoiOIf/h/7vGWjzxJjzrNWq84/RzOOH0pXji8q87bC+ytO3xZXOtMSYzanSh866wJjGmM6uoszD2rS7MgA=";
 
 let byteArrayRegistered = false;
 
@@ -311,6 +546,12 @@ function jsToBrs(value: unknown): BrightScriptValue {
   if (Array.isArray(value)) {
     return new BrsTypes.RoArray(value.map((item) => jsToBrs(item)));
   }
+  if (isTypedArray(value)) {
+    const byteArray = new RoByteArray();
+    const view = value instanceof Buffer ? new Uint8Array(value) : (value as Uint8Array);
+    (byteArray as unknown as { bytes: number[] }).bytes = Array.from(view);
+    return byteArray;
+  }
   if (typeof value === "object") {
     const members = Object.entries(value as Record<string, unknown>).map(([key, val]) => ({
       name: new BrsTypes.BrsString(key),
@@ -345,6 +586,10 @@ function brsToJs(value: BrightScriptValue): unknown {
     return result;
   }
   return value.toString();
+}
+
+function isTypedArray(value: unknown): value is Uint8Array {
+  return value instanceof Uint8Array || value instanceof Buffer;
 }
 
 function callBrsFunction(callable: BrsTypes.Callable | undefined, interpreter: Interpreter, args: BrightScriptValue[]) {
@@ -410,15 +655,19 @@ async function run() {
   root.resolveAll();
   const type = root.lookupType(MESSAGE_TYPE);
 
-  const expectedBuffer = type.encode(SAMPLE_OBJECT).finish();
+  const rawSampleContents = await fs.readFile(ABR_SAMPLE_PATH, "utf8");
+  const sampleCamel = hydrateSamplePayload(JSON.parse(rawSampleContents)) as SamplePayload;
+  const sampleSnake = convertKeysToSnakeCase(sampleCamel) as Record<string, unknown>;
+
+  const expectedBuffer = type.encode(type.fromObject(sampleSnake)).finish();
   const expectedBase64 = Buffer.from(expectedBuffer).toString("base64");
 
-  const brsMessage = jsToBrs(SAMPLE_OBJECT);
+  const brsMessage = jsToBrs(sampleSnake);
   const encoded = callBrsFunction(encodeFn, interpreter, [brsMessage]) as BrsTypes.BrsString;
   const encodedBase64 = encoded.toString();
   assert.strictEqual(encodedBase64, expectedBase64, "BrightScript encode should match protobufjs output");
 
-  const camelCaseMessage = jsToBrs(SAMPLE_OBJECT_CAMEL);
+  const camelCaseMessage = jsToBrs(sampleCamel);
   const camelEncoded = callBrsFunction(encodeFn, interpreter, [camelCaseMessage]) as BrsTypes.BrsString;
   const camelEncodedBase64 = camelEncoded.toString();
   assert.strictEqual(
@@ -431,6 +680,35 @@ async function run() {
   const decodedJs = brsToJs(decoded);
   const expectedDecoded = type.toObject(type.decode(expectedBuffer), { longs: String, enums: String, bytes: String });
   assert.deepStrictEqual(decodedJs, expectedDecoded, "BrightScript decode should match protobufjs object representation");
+
+  const liveBuffer = type.encode(type.fromObject(sampleSnake)).finish();
+  const liveBase64 = Buffer.from(liveBuffer).toString("base64");
+  const expectedLiveDecoded = type.toObject(type.decode(liveBuffer), { longs: String, enums: String, bytes: String });
+  const brsLiveMessage = jsToBrs(sampleCamel);
+  const brsLiveEncoded = callBrsFunction(encodeFn, interpreter, [brsLiveMessage]) as BrsTypes.BrsString;
+  const brsLiveBase64 = brsLiveEncoded.toString();
+
+  const brsDecodedProto = type.toObject(type.decode(Buffer.from(brsLiveBase64, "base64")), {
+    longs: String,
+    enums: String,
+    bytes: String
+  });
+  const normalizedExpectedLive = stripProtoDefaults(type, expectedLiveDecoded);
+  const normalizedBrsEncoded = stripProtoDefaults(type, brsDecodedProto);
+  assert.deepStrictEqual(
+    normalizedBrsEncoded,
+    normalizedExpectedLive,
+    "BrightScript encode should match protobufjs payload structure"
+  );
+
+  const brsLiveDecoded = callBrsFunction(decodeFn, interpreter, [new BrsTypes.BrsString(EXPECTED_LIVE_BASE64)]);
+  const brsLiveDecodedJs = brsToJs(brsLiveDecoded);
+  const normalizedBrsLiveDecoded = stripProtoDefaults(type, brsLiveDecodedJs as Record<string, unknown>);
+  assert.deepStrictEqual(
+    normalizedBrsLiveDecoded,
+    normalizedExpectedLive,
+    "BrightScript decode should match protobufjs decoded object for live payload"
+  );
 
   console.log("video playback abr parity test passed.");
 }

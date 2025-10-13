@@ -110,7 +110,7 @@ async function run() {
   assert.ok(int32File.includes("valueValue = __pb_toSigned32FromString(valueResult.value)"), "int32 decode should compute signed helper value");
   assert.ok(int32File.includes("message.value = valueValue"), "int32 decode should assign normalized value to field");
   assert.ok(uint32File.includes("__pb_writeVarint(bytes, 8)"), "uint32 encode should emit field tag");
-  assert.ok(uint32File.includes("__pb_writeVarint64(bytes, field_value)"), "uint32 encode should use 64-bit writer to avoid Int overflow");
+  assert.ok(uint32File.includes("__pb_writeVarint64(bytes"), "uint32 encode should use 64-bit writer to avoid Int overflow");
   assert.ok(uint32File.includes("valueValue = __pb_toUnsigned32(valueResult.value)"), "uint32 decode should coerce to unsigned value");
   assert.ok(uint32File.includes("message.value = valueValue"), "uint32 decode should assign coerced value");
   assert.ok(!uint32File.includes("value = Int(value)"), "uint32 encode should not truncate using Int()");
@@ -149,12 +149,12 @@ async function run() {
   assert.ok(unpackedInt32File.includes("__pb_writeVarint(bytes, normalized)"), "unpacked int32 encode should write varint per element");
 
   assert.ok(packedUint32File.includes("__pb_writeVarint(bytes, 10)"), "packed uint32 encode should emit packed tag");
-  assert.ok(packedUint32File.includes("__pb_writeVarint64(valuesPacked, valuesItem)"), "packed uint32 encode should pack unsigned values");
+  assert.ok(packedUint32File.includes("__pb_writeVarint64(valuesPacked"), "packed uint32 encode should pack unsigned values");
   assert.ok(packedUint32File.includes("valuesValues.Push(__pb_toUnsigned32"), "packed uint32 decode should convert to unsigned");
 
   assert.ok(unpackedUint32File.includes("for each valuesItem in valuesItems"), "unpacked uint32 encode should iterate each value");
   assert.ok(unpackedUint32File.includes("__pb_writeVarint(bytes, 8)"), "unpacked uint32 encode should emit element tag");
-  assert.ok(unpackedUint32File.includes("__pb_writeVarint64(bytes, valuesItem)"), "unpacked uint32 encode should write each value individually");
+  assert.ok(unpackedUint32File.includes("__pb_writeVarint64(bytes, normalized)"), "unpacked uint32 encode should write each value individually");
 
   assert.ok(packedBoolFile.includes("lower = LCase(boolValue)"), "packed bool encode should normalize string inputs");
   assert.ok(packedBoolFile.includes("__pb_writeVarint(valuesPacked, boolInt)"), "packed bool encode should pack bool integers");

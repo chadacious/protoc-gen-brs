@@ -16,9 +16,53 @@ function __pb_fixNumber(value as Dynamic) as Dynamic
     return Int(value)
 end function
 
+function __pb_normalizeMessageKeys(message as Dynamic, mapping as Object) as Dynamic
+    if message = invalid then return message
+    if mapping = invalid then return message
+    if GetInterface(message, "ifAssociativeArray") = invalid then return message
+    if GetInterface(mapping, "ifAssociativeArray") = invalid then return message
+    keys = mapping.Keys()
+    for each snakeKey in keys
+        camelKey = mapping.Lookup(snakeKey)
+        if camelKey <> invalid then
+            if message.DoesExist(snakeKey) then
+                ' already present
+            else if message.DoesExist(camelKey) then
+                value = message.Lookup(camelKey)
+                message.AddReplace(snakeKey, value)
+            end if
+        end if
+    end for
+    return message
+end function
+
 function __pb_writeVarint(target as Object, value as Dynamic) as Void
     if target = invalid then return
     if value = invalid then return
+    valueType = Type(value)
+    if valueType = "String" or valueType = "roString" then
+        trimmed = value.Trim()
+        if trimmed = "" then return
+        first = Left(trimmed, 1)
+        if first = "-" then
+            magnitude = Mid(trimmed, 2)
+            magnitude = magnitude.Trim()
+            if magnitude = "" then return
+            unsignedStr = __pb_trimLeadingZeros(magnitude)
+            if unsignedStr = "0" then
+                __pb_writeVarint64(target, "0")
+            else
+                complement = __pb_decimalSubtract("18446744073709551616", unsignedStr)
+                __pb_writeVarint64(target, complement)
+            end if
+            return
+        else if first = "+" then
+            trimmed = Mid(trimmed, 2)
+        end if
+        trimmed = __pb_trimLeadingZeros(trimmed)
+        __pb_writeVarint64(target, trimmed)
+        return
+    end if
     v = __pb_truncate(value)
     if v < 0 then
         magnitude = __pb_doubleToDecimalString(0 - v)
@@ -158,6 +202,21 @@ function __pb_normalizeToUnsignedBits(value as Dynamic, maxValue as String) as S
     return __pb_trimLeadingZeros(__pb_doubleToDecimalString(num))
 end function
 
+function __pb_normalizeUnsigned32(value as Dynamic) as String
+    return __pb_normalizeToUnsignedBits(value, "4294967296")
+end function
+
+function __pb_normalizeSigned32(value as Dynamic) as String
+    unsigned = __pb_normalizeToUnsignedBits(value, "4294967296")
+    if __pb_decimalCompare(unsigned, "2147483647") <= 0 then
+        return unsigned
+    end if
+    magnitude = __pb_decimalSubtract("4294967296", unsigned)
+    trimmed = __pb_trimLeadingZeros(magnitude)
+    if trimmed = "0" then return "0"
+    return "-" + trimmed
+end function
+
 function __pb_decimalDivMod(value as String, divisor as Integer) as Object
     valueType = Type(value)
     if valueType <> "String" and valueType <> "roString" then
@@ -273,14 +332,34 @@ function __pb_writeVarint64(target as Object, value as Dynamic) as Void
     end for
 end function
 
-function __pb_encodeZigZag32(value as Integer) as String
-    if value >= 0 then
-        magnitude = __pb_doubleToDecimalString(value)
-        return __pb_trimLeadingZeros(__pb_decimalMultiplyBySmall(magnitude, 2))
+function __pb_encodeZigZag32(value as Dynamic) as String
+    normalized = __pb_normalizeSigned32(value)
+    return __pb_encodeZigZag32FromString(normalized)
+end function
+
+function __pb_encodeZigZag32FromString(value as String) as String
+    if value = invalid then return "0"
+    trimmed = value
+    valueType = Type(trimmed)
+    if valueType <> "String" and valueType <> "roString" then
+        trimmed = trimmed + ""
     end if
-    magnitude = __pb_doubleToDecimalString(0 - value)
-    doubled = __pb_decimalMultiplyBySmall(magnitude, 2)
-    return __pb_trimLeadingZeros(__pb_decimalSubtract(doubled, "1"))
+    trimmed = trimmed.Trim()
+    if trimmed = "" then return "0"
+    sign = Left(trimmed, 1)
+    if sign = "+" then
+        trimmed = Mid(trimmed, 2)
+        trimmed = trimmed.Trim()
+    end if
+    if trimmed = "" then return "0"
+    if sign = "-" then
+        magnitude = __pb_trimLeadingZeros(Mid(trimmed, 2))
+        if magnitude = "" then return "0"
+        doubled = __pb_decimalMultiplyBySmall(magnitude, 2)
+        return __pb_trimLeadingZeros(__pb_decimalSubtract(doubled, "1"))
+    end if
+    magnitude = __pb_trimLeadingZeros(trimmed)
+    return __pb_trimLeadingZeros(__pb_decimalMultiplyBySmall(magnitude, 2))
 end function
 
 function __pb_decodeZigZag32(value as String) as Double
@@ -1048,6 +1127,7 @@ function __pb_handleUnknownField(message as Object, bytes as Object, tagStart as
     skipResult = __pb_skipUnknownField(bytes, tagStart)
     if skipResult = invalid then return tagStart
     nextIndex = skipResult.nextIndex
+    if nextIndex = invalid then return tagStart
     if nextIndex <= tagStart then return tagStart
     __pb_storeUnknownField(message, skipResult.raw)
     return nextIndex
