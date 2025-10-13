@@ -8,7 +8,7 @@
   },
   "scripts": {
     "clean": "rimraf dist out generated/source fixtures/baseline",
-    "build": "tsc --project tsconfig.json",
+    "build": "rimraf dist && tsc --project tsconfig.json && node scripts/copyTemplates.mjs",
     "build:roku": "bsc --project bsconfig.json && node scripts/postBuildRoku.mjs",
     "package:roku": "node scripts/packageChannel.mjs",
     "generate:brs": "ts-node --project tsconfig.json src/cli.ts generate",
@@ -17,7 +17,8 @@
     "lint": "echo \"TODO: add linting\"",
     "test": "ts-node --project tsconfig.json tests/uintTypes.test.ts && ts-node --project tsconfig.json tests/videoPlaybackAbr.test.ts && (npm run test:parity || echo \"Scalar parity test failed (non-blocking)\")",
     "test:parity": "ts-node --project tsconfig.json tests/scalarParity.test.ts",
-    "roku:test": "node scripts/runOnDevice.mjs"
+    "roku:test": "node scripts/runOnDevice.mjs",
+    "prepare": "npm run build"
   },
   "keywords": [
     "roku",

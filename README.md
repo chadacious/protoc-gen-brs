@@ -1,17 +1,38 @@
 # protoc-gen-brs
 
-Prototype workspace for generating BrightScript encode/decode modules from Protocol Buffers definitions. The current slice already:
+BrightScript encoder/decoder generator for Protocol Buffers. Feed it `.proto` files and it will:
 
-- Parses `.proto` files (starting with `proto/simple.proto`).
-- Emits BrightScript runtime helpers and message-specific encoders/decoders (currently supporting `string`, `int32`, `int64`, `bool`, and `bytes`) into `roku-app/source/generated/`.
-- Produces JavaScript baseline vectors (JSON + BrightScript data) using `protobufjs` for parity checks.
-- Loads the generated code and baseline data inside a Roku harness (`roku-app/source/main.brs`) to compare results.
+- Parse the schema bundle.
+- Emit BrightScript runtime helpers plus message-specific encode/decode modules.
+- Optionally generate JSON baseline vectors (via `protobufjs`) for parity testing.
+- Mirror the output into a Roku harness so it can be exercised on-device.
 
-The longer-term goal is to:
+## CLI usage
 
-- Translate `.proto` schemas into BrighterScript modules that can run on Roku devices.
-- Produce canonical baseline data using `protobufjs` so generated BrightScript logic can be verified.
-- Execute those fixtures inside a Roku test harness to confirm parity with the JavaScript baseline.
+Install globally (or run via `npx`):
+
+```bash
+npm install -g protoc-gen-brs
+```
+
+Generate BrightScript modules:
+
+```bash
+protoc-gen-brs generate \
+  --proto path/to/schema.proto \
+  --proto path/to/another.proto \
+  --outDir ./brs-output
+```
+
+Create baseline fixtures:
+
+```bash
+protoc-gen-brs baseline \
+  --proto path/to/schema.proto \
+  --fixtureDir ./fixtures/parity
+```
+
+Both commands accept multiple `--proto` values (files or directories).
 
 ## Prerequisites
 
