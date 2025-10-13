@@ -1,0 +1,94 @@
+' Auto-generated encoder/decoder for {{TYPE_NAME}}
+function {{TYPE_NAME}}Encode(message as Object) as String
+    source = invalid
+    if message <> invalid then
+        if GetInterface(message, "ifAssociativeArray") <> invalid then
+            source = message.Lookup("{{FIELD_NAME}}")
+        else
+            source = message.{{FIELD_NAME}}
+        end if
+    end if
+
+    bytes = __pb_createByteArray()
+    items = invalid
+    if source <> invalid then
+        if GetInterface(source, "ifArray") <> invalid then
+            items = source
+        else
+            single = CreateObject("roArray", 1, true)
+            single.Push(source)
+            items = single
+        end if
+    end if
+
+    if items <> invalid then
+        if {{IS_PACKED}} then
+            packed = __pb_createByteArray()
+            for each rawValue in items
+                encoded = __pb_encodeZigZag64(rawValue)
+                __pb_writeVarint64(packed, encoded)
+            end for
+            if packed.Count() > 0 then
+                __pb_writeVarint(bytes, {{PACKED_TAG}})
+                __pb_writeVarint(bytes, packed.Count())
+                __pb_appendByteArray(bytes, packed)
+            end if
+        else
+            for each rawValue in items
+                encoded = __pb_encodeZigZag64(rawValue)
+                __pb_writeVarint(bytes, {{TAG}})
+                __pb_writeVarint64(bytes, encoded)
+            end for
+        end if
+    end if
+    __pb_appendUnknownFields(bytes, message)
+    return __pb_toBase64(bytes)
+end function
+
+function {{TYPE_NAME}}Decode(encoded as String) as Object
+    bytes = __pb_fromBase64(encoded)
+    cursor = 0
+    limit = bytes.Count()
+    message = {}
+    while cursor < limit
+        tagStart = cursor
+        tagResult = __pb_readVarint(bytes, cursor)
+        cursor = tagResult.nextIndex
+        fieldNumber = Int(tagResult.value / 8)
+        wireType = tagResult.value AND &h07
+        if fieldNumber = {{FIELD_ID}} then
+            values = invalid
+            if GetInterface(message, "ifAssociativeArray") <> invalid and message.DoesExist("{{FIELD_NAME}}") then
+                values = message.{{FIELD_NAME}}
+            end if
+            if values = invalid then
+                values = CreateObject("roArray", 0, true)
+                message.{{FIELD_NAME}} = values
+            end if
+
+            if wireType = {{ELEMENT_WIRE_TYPE}} then
+                valueResult = __pb_readVarint64(bytes, cursor)
+                cursor = valueResult.nextIndex
+                values.Push(__pb_decodeZigZag64(valueResult.value))
+            else if wireType = {{PACKED_WIRE_TYPE}} then
+                lengthResult = __pb_readVarint(bytes, cursor)
+                cursor = lengthResult.nextIndex
+                packEnd = cursor + lengthResult.value
+                while cursor < packEnd
+                    valueResult = __pb_readVarint64(bytes, cursor)
+                    cursor = valueResult.nextIndex
+                    values.Push(__pb_decodeZigZag64(valueResult.value))
+                end while
+            else
+                nextIndex = __pb_handleUnknownField(message, bytes, tagStart)
+                if nextIndex <= tagStart then exit while
+                cursor = nextIndex
+            end if
+        else
+            nextIndex = __pb_handleUnknownField(message, bytes, tagStart)
+            if nextIndex <= tagStart then exit while
+            cursor = nextIndex
+        end if
+    end while
+    return message
+end function

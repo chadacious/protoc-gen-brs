@@ -1,6 +1,8 @@
 import path from "node:path";
 import fs from "fs-extra";
+import { existsSync } from "node:fs";
 import { Root } from "protobufjs";
+import * as protobuf from "protobufjs";
 
 export interface ProtoBundle {
   root: Root;
@@ -8,50 +10,125 @@ export interface ProtoBundle {
 }
 
 export async function loadProtoBundle(protoPaths: string[]): Promise<ProtoBundle> {
+  const { files, searchDirs } = await collectProtoInputs(protoPaths);
+  if (files.length === 0) {
+    throw new Error("No .proto files found in the provided paths.");
+  }
+
   const root = new Root();
-  const resolvedFiles = await expandProtoPaths(protoPaths);
 
-  await Promise.all(
-    resolvedFiles.map(async (filePath) => {
-      const absolute = path.resolve(filePath);
-      await root.load(absolute, { keepCase: true });
-    })
-  );
+  root.resolvePath = (origin, target) => {
+    if (path.isAbsolute(target)) {
+      return target;
+    }
 
-  root.resolveAll();
+    const candidates: string[] = [];
+    if (origin) {
+      candidates.push(path.resolve(path.dirname(origin), target));
+    }
+    for (const dir of Array.from(searchDirs)) {
+      candidates.push(path.resolve(dir, target));
+    }
+    candidates.push(path.resolve(process.cwd(), target));
 
-  return {
-    root,
-    files: resolvedFiles.map((filePath) => path.relative(process.cwd(), path.resolve(filePath)))
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        registerSearchDir(path.dirname(candidate), searchDirs);
+        return candidate;
+      }
+    }
+
+    return candidates[candidates.length - 1];
   };
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      root.load(files, { keepCase: true }, (error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    root.resolveAll();
+
+    return {
+      root,
+      files: files.map((filePath) => path.relative(process.cwd(), filePath))
+    };
+  } catch {
+    const combined = await buildCombinedProto(files);
+    const parsed = protobuf.parse(combined, { keepCase: true }) as { root: Root };
+    parsed.root.resolveAll();
+
+    return {
+      root: parsed.root,
+      files: files.map((filePath) => path.relative(process.cwd(), filePath))
+    };
+  }
 }
 
-async function expandProtoPaths(protoPaths: string[]): Promise<string[]> {
-  const results: string[] = [];
+async function collectProtoInputs(protoPaths: string[]): Promise<{ files: string[]; searchDirs: Set<string> }> {
+  const files = new Set<string>();
+  const searchDirs = new Set<string>();
 
-  for (const item of protoPaths) {
-    const resolved = path.resolve(item);
-    const stats = await fs.stat(resolved);
-
-    if (stats.isDirectory()) {
-      const entries = await fs.readdir(resolved);
-      for (const entry of entries) {
-        if (entry.startsWith(".")) {
-          continue;
+  async function visit(entry: string) {
+    const resolved = path.resolve(entry);
+    try {
+      const stats = await fs.stat(resolved);
+      if (stats.isDirectory()) {
+        registerSearchDir(resolved, searchDirs);
+        const children = await fs.readdir(resolved);
+        for (const child of children) {
+          if (child.startsWith(".")) {
+            continue;
+          }
+          await visit(path.join(resolved, child));
         }
-        const candidate = path.join(resolved, entry);
-        const entryStats = await fs.stat(candidate);
-        if (entryStats.isDirectory()) {
-          const nested = await expandProtoPaths([candidate]);
-          results.push(...nested);
-        } else if (entry.endsWith(".proto")) {
-          results.push(candidate);
-        }
+      } else if (stats.isFile() && resolved.endsWith(".proto")) {
+        files.add(resolved);
+        registerSearchDir(path.dirname(resolved), searchDirs);
       }
-    } else if (stats.isFile() && resolved.endsWith(".proto")) {
-      results.push(resolved);
+    } catch {
+      // ignore paths that cannot be read
     }
   }
 
-  return Array.from(new Set(results)).sort();
+  for (const input of protoPaths) {
+    await visit(input);
+  }
+
+  return {
+    files: Array.from(files).sort(),
+    searchDirs
+  };
+}
+
+function registerSearchDir(dir: string, searchDirs: Set<string>) {
+  const absolute = path.resolve(dir);
+  if (!searchDirs.has(absolute)) {
+    searchDirs.add(absolute);
+  }
+  const parent = path.dirname(absolute);
+  if (parent && parent !== absolute && !searchDirs.has(parent)) {
+    searchDirs.add(parent);
+  }
+}
+
+async function buildCombinedProto(files: string[]): Promise<string> {
+  let combined = "";
+  for (const filePath of files) {
+    const contents = await fs.readFile(filePath, "utf8");
+    combined += removeImportStatements(contents) + "\n";
+  }
+  return combined;
+}
+
+function removeImportStatements(contents: string): string {
+  return contents
+    .split(/\r?\n/)
+    .filter((line) => line.trim().toLowerCase().startsWith("import ") === false)
+    .join("\n");
 }

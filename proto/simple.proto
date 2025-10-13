@@ -2,6 +2,13 @@ syntax = "proto3";
 
 package samples;
 
+enum SampleEnum {
+  SAMPLE_ENUM_UNKNOWN = 0;
+  SAMPLE_ENUM_FIRST = 1;
+  SAMPLE_ENUM_SECOND = 2;
+  SAMPLE_ENUM_THIRD = 3;
+}
+
 message SimpleMessage {
   string value = 1;
 }
@@ -14,10 +21,178 @@ message FlagMessage {
   bool enabled = 1;
 }
 
+message FloatMessage {
+  float value = 1;
+}
+
+message DoubleMessage {
+  double value = 1;
+}
+
+message Fixed32Message {
+  fixed32 value = 1;
+}
+
+message Sfixed32Message {
+  sfixed32 value = 1;
+}
+
+message Fixed64Message {
+  fixed64 value = 1;
+}
+
+message Sfixed64Message {
+  sfixed64 value = 1;
+}
+
 message BytesMessage {
   bytes data = 1;
 }
 
 message LongMessage {
   int64 total = 1;
+}
+
+message UnsignedCountMessage {
+  uint32 count = 1;
+}
+
+message UnsignedLongMessage {
+  uint64 total = 1;
+}
+
+message SignedCountMessage {
+  sint32 delta = 1;
+}
+
+message SignedLongMessage {
+  sint64 delta = 1;
+}
+
+message PackedInt32Message {
+  repeated int32 values = 1;
+}
+
+message UnpackedInt32Message {
+  repeated int32 values = 1 [packed = false];
+}
+
+message PackedUint32Message {
+  repeated uint32 values = 1;
+}
+
+message UnpackedUint32Message {
+  repeated uint32 values = 1 [packed = false];
+}
+
+message PackedSint32Message {
+  repeated sint32 values = 1;
+}
+
+message UnpackedSint32Message {
+  repeated sint32 values = 1 [packed = false];
+}
+
+message PackedInt64Message {
+  repeated int64 values = 1;
+}
+
+message UnpackedInt64Message {
+  repeated int64 values = 1 [packed = false];
+}
+
+message PackedUint64Message {
+  repeated uint64 values = 1;
+}
+
+message UnpackedUint64Message {
+  repeated uint64 values = 1 [packed = false];
+}
+
+message PackedSint64Message {
+  repeated sint64 values = 1;
+}
+
+message UnpackedSint64Message {
+  repeated sint64 values = 1 [packed = false];
+}
+
+message PackedBoolMessage {
+  repeated bool values = 1;
+}
+
+message UnpackedBoolMessage {
+  repeated bool values = 1 [packed = false];
+}
+
+message PackedFloatMessage {
+  repeated float values = 1;
+}
+
+message UnpackedFloatMessage {
+  repeated float values = 1 [packed = false];
+}
+
+message RepeatedDoubleMessage {
+  repeated double values = 1;
+}
+
+message UnpackedDoubleMessage {
+  repeated double values = 1 [packed = false];
+}
+
+message RepeatedFixed32Message {
+  repeated fixed32 values = 1;
+}
+
+message UnpackedFixed32Message {
+  repeated fixed32 values = 1 [packed = false];
+}
+
+message RepeatedSfixed32Message {
+  repeated sfixed32 values = 1;
+}
+
+message UnpackedSfixed32Message {
+  repeated sfixed32 values = 1 [packed = false];
+}
+
+message RepeatedFixed64Message {
+  repeated fixed64 values = 1;
+}
+
+message UnpackedFixed64Message {
+  repeated fixed64 values = 1 [packed = false];
+}
+
+message RepeatedSfixed64Message {
+  repeated sfixed64 values = 1;
+}
+
+message UnpackedSfixed64Message {
+  repeated sfixed64 values = 1 [packed = false];
+}
+
+message EnumMessage {
+  SampleEnum choice = 1;
+}
+
+message PackedEnumMessage {
+  repeated SampleEnum choices = 1;
+}
+
+message UnpackedEnumMessage {
+  repeated SampleEnum choices = 1 [packed = false];
+}
+
+message ChildMessage {
+  int32 value = 1;
+}
+
+message ParentMessage {
+  ChildMessage child = 1;
+}
+
+message ParentRepeatedMessage {
+  repeated ChildMessage children = 1;
 }

@@ -1,0 +1,54 @@
+' Auto-generated encoder/decoder for {{TYPE_NAME}}
+function {{TYPE_NAME}}Encode(message as Object) as String
+    value = invalid
+    if message <> invalid then
+        if GetInterface(message, "ifAssociativeArray") <> invalid then
+            value = message.Lookup("{{FIELD_NAME}}")
+        else
+            value = message.{{FIELD_NAME}}
+        end if
+    end if
+    dataBytes = __pb_createByteArray()
+    if value <> invalid then
+        valueType = Type(value)
+        if valueType = "String" or valueType = "roString" then
+            dataBytes.FromBase64String(value)
+        else if valueType = "roByteArray" then
+            __pb_appendByteArray(dataBytes, value)
+        end if
+    end if
+
+    bytes = __pb_createByteArray()
+    __pb_writeVarint(bytes, {{TAG}})
+    __pb_writeVarint(bytes, dataBytes.Count())
+    __pb_appendByteArray(bytes, dataBytes)
+    __pb_appendUnknownFields(bytes, message)
+    return __pb_toBase64(bytes)
+end function
+
+function {{TYPE_NAME}}Decode(encoded as String) as Object
+    bytes = __pb_fromBase64(encoded)
+    cursor = 0
+    limit = bytes.Count()
+    message = {}
+    while cursor < limit
+        tagStart = cursor
+        tagResult = __pb_readVarint(bytes, cursor)
+        cursor = tagResult.nextIndex
+        fieldNumber = Int(tagResult.value / 8)
+        wireType = tagResult.value AND &h07
+        if fieldNumber = {{FIELD_ID}} and wireType = {{WIRE_TYPE}} then
+            lengthResult = __pb_readVarint(bytes, cursor)
+            cursor = lengthResult.nextIndex
+            dataLength = lengthResult.value
+            rawBytes = __pb_readBytes(bytes, cursor, dataLength)
+            cursor = cursor + dataLength
+            message.{{FIELD_NAME}} = __pb_byteArrayToBase64(rawBytes)
+        else
+            nextIndex = __pb_handleUnknownField(message, bytes, tagStart)
+            if nextIndex <= tagStart then exit while
+            cursor = nextIndex
+        end if
+    end while
+    return message
+end function
