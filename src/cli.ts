@@ -9,11 +9,13 @@ type GenerateCommandArgs = {
   proto: string[];
   outDir: string;
   config?: string;
+  pruneDefaults?: boolean;
 };
 
 type BaselineCommandArgs = {
   proto: string[];
   fixtureDir: string;
+  pruneDefaults?: boolean;
 };
 
 async function main() {
@@ -42,13 +44,19 @@ async function main() {
             alias: "c",
             type: "string",
             describe: "Optional JSON config describing generation options"
+          })
+          .option("pruneDefaults", {
+            type: "boolean",
+            default: false,
+            describe: "Skip encoding fields when their values equal the protobuf default"
           }),
       async (argv: ArgumentsCamelCase<GenerateCommandArgs>) => {
         const protoLocations = argv.proto.map(String);
         await generateBrightScriptArtifacts({
           protoPaths: protoLocations,
           outputDir: String(argv.outDir),
-          configPath: argv.config ? String(argv.config) : undefined
+          configPath: argv.config ? String(argv.config) : undefined,
+          pruneDefaults: argv.pruneDefaults === true
         });
       }
     )
@@ -68,12 +76,18 @@ async function main() {
             type: "string",
             default: "fixtures/baseline",
             describe: "Output directory for the JSON baseline fixtures"
+          })
+          .option("pruneDefaults", {
+            type: "boolean",
+            default: false,
+            describe: "Skip encoding fields when their values equal the protobuf default"
           }),
       async (argv: ArgumentsCamelCase<BaselineCommandArgs>) => {
         const protoLocations = argv.proto.map(String);
         await generateBaselineVectors({
           protoPaths: protoLocations,
-          fixtureDir: String(argv.fixtureDir)
+          fixtureDir: String(argv.fixtureDir),
+          pruneDefaults: argv.pruneDefaults === true
         });
       }
     )

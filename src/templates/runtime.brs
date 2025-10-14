@@ -36,6 +36,112 @@ function __pb_normalizeMessageKeys(message as Dynamic, mapping as Object) as Dyn
     return message
 end function
 
+function __pb_scalarEqualsDefault(value as Dynamic, scalarType as String, defaultValue as Dynamic) as Boolean
+    if scalarType = invalid then return false
+    if value = invalid then return true
+    if scalarType = "bool" then
+        boolValue = value
+        boolType = Type(boolValue)
+        if boolType = "String" or boolType = "roString" then
+            lower = LCase(boolValue)
+            boolValue = (lower = "true") or (lower = "1")
+        else if boolType = "Boolean" or boolType = "roBoolean" then
+            ' already normalized
+        else
+            boolValue = (boolValue <> 0)
+        end if
+        target = defaultValue
+        targetType = Type(target)
+        if targetType = "String" or targetType = "roString" then
+            lowerTarget = LCase(target)
+            target = (lowerTarget = "true") or (lowerTarget = "1")
+        else if targetType = "Boolean" or targetType = "roBoolean" then
+            ' use as is
+        else
+            target = (target <> 0)
+        end if
+        return boolValue = target
+    else if scalarType = "string" then
+        strValue = value
+        strType = Type(strValue)
+        if strType <> "String" and strType <> "roString" then
+            strValue = strValue + ""
+        end if
+        target = defaultValue
+        targetType = Type(target)
+        if targetType <> "String" and targetType <> "roString" then
+            target = target + ""
+        end if
+        return strValue = target
+    else if scalarType = "bytes" then
+        dataBytes = __pb_createByteArray()
+        if value <> invalid then
+            valueType = Type(value)
+            if valueType = "String" or valueType = "roString" then
+                trimmed = value.Trim()
+                if trimmed <> "" then
+                    dataBytes.FromBase64String(trimmed)
+                end if
+            else if valueType = "roByteArray" then
+                dataBytes = value
+            end if
+        end if
+        targetStr = defaultValue
+        targetType = Type(targetStr)
+        if targetType <> "String" and targetType <> "roString" then
+            targetStr = targetStr + ""
+        end if
+        if targetStr = "" then
+            return dataBytes.Count() = 0
+        end if
+        targetBytes = __pb_createByteArray()
+        targetBytes.FromBase64String(targetStr)
+        if targetBytes.Count() <> dataBytes.Count() then return false
+        for i = 0 to targetBytes.Count() - 1
+            if targetBytes[i] <> dataBytes[i] then return false
+        end for
+        return true
+    else
+        defaultStr = defaultValue
+        defaultType = Type(defaultStr)
+        if defaultType <> "String" and defaultType <> "roString" then
+            defaultStr = defaultStr + ""
+        end if
+        if scalarType = "int32" or scalarType = "sint32" or scalarType = "sfixed32" or scalarType = "enum" then
+            normalized = __pb_normalizeSigned32(value)
+            return normalized = defaultStr
+        else if scalarType = "uint32" or scalarType = "fixed32" then
+            normalized = __pb_normalizeUnsigned32(value)
+            return normalized = defaultStr
+        else if scalarType = "int64" or scalarType = "sint64" or scalarType = "sfixed64" then
+            normalized = __pb_normalizeSigned64(value)
+            return normalized = defaultStr
+        else if scalarType = "uint64" or scalarType = "fixed64" then
+            normalized = __pb_normalizeUnsigned64(value)
+            return normalized = defaultStr
+        else if scalarType = "float" or scalarType = "double" then
+            numeric = __pb_toLong(value)
+            targetNumeric = Val(defaultStr)
+            return numeric = targetNumeric
+        end if
+    end if
+    normalizedDefault = defaultValue
+    normalizedType = Type(normalizedDefault)
+    if normalizedType <> "String" and normalizedType <> "roString" then
+        normalizedDefault = normalizedDefault + ""
+    end if
+    normalizedValue = __pb_normalizeUnsignedDecimal(value)
+    if normalizedValue = invalid then
+        valueType = Type(value)
+        if valueType = "String" or valueType = "roString" then
+            normalizedValue = value
+        else
+            normalizedValue = value + ""
+        end if
+    end if
+    return normalizedValue = normalizedDefault
+end function
+
 function __pb_writeVarint(target as Object, value as Dynamic) as Void
     if target = invalid then return
     if value = invalid then return
@@ -204,6 +310,21 @@ end function
 
 function __pb_normalizeUnsigned32(value as Dynamic) as String
     return __pb_normalizeToUnsignedBits(value, "4294967296")
+end function
+
+function __pb_normalizeUnsigned64(value as Dynamic) as String
+    return __pb_normalizeToUnsignedBits(value, "18446744073709551616")
+end function
+
+function __pb_normalizeSigned64(value as Dynamic) as String
+    unsigned = __pb_normalizeToUnsignedBits(value, "18446744073709551616")
+    if __pb_decimalCompare(unsigned, "9223372036854775807") <= 0 then
+        return unsigned
+    end if
+    magnitude = __pb_decimalSubtract("18446744073709551616", unsigned)
+    trimmed = __pb_trimLeadingZeros(magnitude)
+    if trimmed = "0" then return "0"
+    return "-" + trimmed
 end function
 
 function __pb_normalizeSigned32(value as Dynamic) as String

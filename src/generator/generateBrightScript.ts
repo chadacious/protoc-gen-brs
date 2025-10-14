@@ -8,16 +8,28 @@ import {
   MessageFieldDescriptor,
   SupportedScalarType
 } from "./schemaUtils";
+import { resolveScalarDefault, formatDefaultLiteral } from "./defaultValueUtils";
 
 export interface GenerateBrightScriptOptions {
   protoPaths: string[];
   outputDir: string;
   configPath?: string;
+  pruneDefaults?: boolean;
+}
+
+const generationSettings = {
+  pruneDefaultValues: false
+};
+
+function shouldPruneDefaults(): boolean {
+  return generationSettings.pruneDefaultValues;
 }
 
 export async function generateBrightScriptArtifacts(options: GenerateBrightScriptOptions) {
   const resolvedOutput = path.resolve(options.outputDir);
   await fs.ensureDir(resolvedOutput);
+
+  generationSettings.pruneDefaultValues = options.pruneDefaults === true;
 
   const bundle = await loadProtoBundle(options.protoPaths);
   const messageDescriptors = collectMessageDescriptors(bundle.root);
@@ -201,9 +213,17 @@ function renderMessageEncodeField(field: Extract<MessageFieldDescriptor, { kind:
     lines.push(indent(`if ${loopVar} <> invalid then`, indentLevel + 2));
     lines.push(indent(`${encodedVar} = ${childEncode}(${loopVar})`, indentLevel + 3));
     lines.push(indent(`${bytesVar} = __pb_fromBase64(${encodedVar})`, indentLevel + 3));
-    lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 3));
-    lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 3));
-    lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 3));
+    if (shouldPruneDefaults()) {
+      lines.push(indent(`if ${bytesVar}.Count() > 0 then`, indentLevel + 3));
+      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 4));
+      lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 4));
+      lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 4));
+      lines.push(indent("end if", indentLevel + 3));
+    } else {
+      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 3));
+      lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 3));
+      lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 3));
+    }
     lines.push(indent("end if", indentLevel + 2));
     lines.push(indent("end for", indentLevel + 1));
     lines.push(indent("end if", indentLevel));
@@ -212,9 +232,17 @@ function renderMessageEncodeField(field: Extract<MessageFieldDescriptor, { kind:
     lines.push(indent(`if ${valueVar} <> invalid then`, indentLevel));
     lines.push(indent(`${encodedVar} = ${childEncode}(${valueVar})`, indentLevel + 1));
     lines.push(indent(`${bytesVar} = __pb_fromBase64(${encodedVar})`, indentLevel + 1));
-    lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 1));
-    lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 1));
-    lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 1));
+    if (shouldPruneDefaults()) {
+      lines.push(indent(`if ${bytesVar}.Count() > 0 then`, indentLevel + 1));
+      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 2));
+      lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 2));
+      lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 2));
+      lines.push(indent("end if", indentLevel + 1));
+    } else {
+      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 1));
+      lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 1));
+      lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 1));
+    }
     lines.push(indent("end if", indentLevel));
   }
 
@@ -256,7 +284,20 @@ function renderScalarEncodeField(field: Extract<MessageFieldDescriptor, { kind: 
   } else {
     lines.push("");
     lines.push(indent(`if ${valueVar} <> invalid then`, indentLevel));
-    lines.push(...renderScalarSingleWrite(field.scalarType, valueVar, field.tag, indentLevel + 1));
+    if (shouldPruneDefaults() && !field.isRequired) {
+      const defaultDescriptor = resolveScalarDefault(field.field, field.scalarType);
+      const defaultLiteral = formatDefaultLiteral(defaultDescriptor);
+      lines.push(
+        indent(
+          `if not __pb_scalarEqualsDefault(${valueVar}, "${field.scalarType}", ${defaultLiteral}) then`,
+          indentLevel + 1
+        )
+      );
+      lines.push(...renderScalarSingleWrite(field.scalarType, valueVar, field.tag, indentLevel + 2));
+      lines.push(indent("end if", indentLevel + 1));
+    } else {
+      lines.push(...renderScalarSingleWrite(field.scalarType, valueVar, field.tag, indentLevel + 1));
+    }
     lines.push(indent("end if", indentLevel));
   }
 
@@ -303,8 +344,22 @@ function renderEnumEncodeField(descriptor: MessageDescriptor, field: Extract<Mes
     lines.push("");
     lines.push(indent(`if ${valueVar} <> invalid then`, indentLevel));
     lines.push(indent(`numericValue = ${normalizeFn}(${valueVar})`, indentLevel + 1));
-    lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 1));
-    lines.push(indent(`__pb_writeVarint(bytes, numericValue)`, indentLevel + 1));
+    if (shouldPruneDefaults() && !field.isRequired) {
+      const defaultDescriptor = resolveScalarDefault(field.field, "enum", field.enumInfo);
+      const defaultLiteral = formatDefaultLiteral(defaultDescriptor);
+      lines.push(
+        indent(
+          `if not __pb_scalarEqualsDefault(numericValue, "enum", ${defaultLiteral}) then`,
+          indentLevel + 1
+        )
+      );
+      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 2));
+      lines.push(indent(`__pb_writeVarint(bytes, numericValue)`, indentLevel + 2));
+      lines.push(indent("end if", indentLevel + 1));
+    } else {
+      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 1));
+      lines.push(indent(`__pb_writeVarint(bytes, numericValue)`, indentLevel + 1));
+    }
     lines.push(indent("end if", indentLevel));
   }
 

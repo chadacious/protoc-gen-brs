@@ -11,6 +11,12 @@ import {
   SupportedScalarType,
   PACKABLE_SCALAR_TYPES
 } from "./schemaUtils";
+import {
+  resolveScalarDefault,
+  valueEqualsDefault,
+  pruneDefaultsInMessage,
+  ScalarLikeType
+} from "./defaultValueUtils";
 
 const WIRE_TYPE_BY_SCALAR: Record<SupportedScalarType, number> = {
   string: 2,
@@ -39,6 +45,7 @@ const CUSTOM_BASELINE_DIR = path.resolve("fixtures/parity");
 export interface GenerateBaselineOptions {
   protoPaths: string[];
   fixtureDir: string;
+  pruneDefaults?: boolean;
 }
 
 export async function generateBaselineVectors(options: GenerateBaselineOptions) {
@@ -51,13 +58,21 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
   const scalarDescriptorMap = new Map(simpleMessages.map((descriptor) => [descriptor.type.name, descriptor]));
 
   const cases = [] as BaselineCase[];
+  const pruneDefaults = options.pruneDefaults === true;
 
   for (const descriptor of simpleMessages) {
     for (const sample of buildSamples(descriptor)) {
       const payloadValue = normalizePayloadValue(descriptor, sample.value);
-      const payload = {
-        [descriptor.field.name]: payloadValue
-      };
+      const payload: Record<string, unknown> = {};
+      if (
+        !shouldPruneScalarSample(
+          descriptor,
+          payloadValue,
+          pruneDefaults
+        )
+      ) {
+        payload[descriptor.field.name] = payloadValue;
+      }
 
       const encodedBuffer = descriptor.type.encode(payload).finish();
       const encodedBase64 = Buffer.from(encodedBuffer).toString("base64");
@@ -88,8 +103,21 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
   for (const descriptor of messageFieldMessages) {
     const samples = buildMessageFieldSamples(descriptor, scalarDescriptorMap);
     for (const sample of samples) {
+      const normalizedValue = cloneSampleValue(sample.value);
+      if (pruneDefaults) {
+        if (descriptor.isRepeated && Array.isArray(normalizedValue)) {
+          normalizedValue.forEach((entry) => {
+            if (entry && typeof entry === "object") {
+              pruneDefaultsInMessage(descriptor.childType, entry as Record<string, unknown>);
+            }
+          });
+        } else if (!descriptor.isRepeated && normalizedValue && typeof normalizedValue === "object") {
+          pruneDefaultsInMessage(descriptor.childType, normalizedValue as Record<string, unknown>);
+        }
+      }
+
       const payload = {
-        [descriptor.field.name]: sample.value
+        [descriptor.field.name]: normalizedValue
       };
 
       const encodedBuffer = descriptor.type.encode(payload).finish();
@@ -616,6 +644,29 @@ function normalizePayloadValue(descriptor: SimpleScalarMessageDescriptor, sample
     default:
       return String(sampleValue);
   }
+}
+
+function shouldPruneScalarSample(
+  descriptor: SimpleScalarMessageDescriptor,
+  payloadValue: unknown,
+  pruneDefaults: boolean
+): boolean {
+  if (!pruneDefaults || descriptor.isRepeated) {
+    return false;
+  }
+  if (descriptor.field.required === true) {
+    return false;
+  }
+  const scalarType = descriptor.scalarType as ScalarLikeType;
+  const defaultDescriptor = resolveScalarDefault(descriptor.field, scalarType, descriptor.enumInfo);
+  return valueEqualsDefault(payloadValue, scalarType, defaultDescriptor);
+}
+
+function cloneSampleValue<T>(value: T): T {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function buildAlternateEncodings(descriptor: SimpleScalarMessageDescriptor, sampleValue: SampleValue): string[] {
