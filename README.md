@@ -73,6 +73,37 @@ npm run build:roku
 
 The Roku app prints per-case comparisons plus a summary tally. The scaffold currently handles a message with a single string field; expanding the generator logic will broaden coverage.
 
+### Roku Parity Harness & Pruning Modes
+
+The `npm run roku:test` script regenerates the runtime + baseline fixtures, side-loads the channel, and collects the telnet log from a developer device (requires `ROKU_HOST` / `ROKU_PASSWORD`).  
+During generation we normally pass `--pruneDefaults` so proto2 default values are stripped in both the encoded payloads and JSON baselines. This mirrors the behaviour the Roku runtime now implements and keeps the parity checks focused on user-set fields.
+
+- Default run (pruned):
+  ```bash
+  ROKU_HOST=... ROKU_PASSWORD=... npm run roku:test
+  ```
+  This matches `--pruneDefaults` on both `generate:brs` and `generate:baseline`.
+
+- Skip pruning:
+  ```bash
+  ROKU_HOST=... ROKU_PASSWORD=... npm run roku:test -- --no-prune
+  ```
+  Useful when you need to inspect raw proto defaults or compare behaviour with legacy fixtures. This omits `--pruneDefaults` for both generators.
+
+- Explicitly re-enable pruning (e.g. after using `--no-prune`):
+  ```bash
+  ROKU_HOST=... ROKU_PASSWORD=... npm run roku:test -- --prune
+  ```
+
+You can also control the default via environment variable:
+
+```bash
+export ROKU_PRUNE_DEFAULTS=false   # or true
+ROKU_HOST=... ROKU_PASSWORD=... npm run roku:test
+```
+
+CLI flags (`--prune`, `--no-prune`) take precedence over `ROKU_PRUNE_DEFAULTS`. The full capture is written to `out/roku-log.txt` either way.
+
 ## Workspace Layout
 
 - `src/` – TypeScript CLI and generation logic.

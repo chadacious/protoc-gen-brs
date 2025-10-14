@@ -32,6 +32,63 @@ if (!host || !password) {
   process.exit(1);
 }
 
+function parseBoolean(value, defaultValue) {
+  if (value === undefined) {
+    return defaultValue;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "y"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "n"].includes(normalized)) {
+    return false;
+  }
+  return defaultValue;
+}
+
+const cliArgs = process.argv.slice(2);
+let shouldPruneDefaults = parseBoolean(process.env.ROKU_PRUNE_DEFAULTS, true);
+let showHelp = false;
+
+for (const arg of cliArgs) {
+  switch (arg) {
+    case "--prune":
+    case "--prune-defaults":
+      shouldPruneDefaults = true;
+      break;
+    case "--no-prune":
+    case "--no-prune-defaults":
+      shouldPruneDefaults = false;
+      break;
+    case "--help":
+    case "-h":
+      showHelp = true;
+      break;
+    default:
+      console.error(`Unknown argument: ${arg}`);
+      showHelp = true;
+      break;
+  }
+}
+
+if (showHelp) {
+  console.log(`Usage: npm run roku:test [-- [--prune|--no-prune]]
+
+Options:
+  --prune, --prune-defaults           Generate artifacts with --pruneDefaults (default)
+  --no-prune, --no-prune-defaults     Generate artifacts without --pruneDefaults
+  -h, --help                          Show this message
+
+Environment:
+  ROKU_PRUNE_DEFAULTS=true|false      Overrides the default prune behaviour
+`);
+  if (cliArgs.length > 0 && !cliArgs.includes("--help") && !cliArgs.includes("-h")) {
+    process.exit(1);
+  } else {
+    process.exit(0);
+  }
+}
+
 async function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: "inherit", ...options });
@@ -66,7 +123,16 @@ async function ensureGeneratedArtifacts() {
     }
   }
 
-  const generateArgs = ["run", "generate:brs", "--", "--proto", "proto/simple.proto", "--pruneDefaults"];
+  console.log(
+    shouldPruneDefaults
+      ? "Generating runtime artifacts with --pruneDefaults…"
+      : "Generating runtime artifacts without --pruneDefaults…"
+  );
+
+  const generateArgs = ["run", "generate:brs", "--", "--proto", "proto/simple.proto"];
+  if (shouldPruneDefaults) {
+    generateArgs.push("--pruneDefaults");
+  }
   for (const filePath of protoFiles) {
     generateArgs.push("--proto", filePath);
   }
@@ -77,7 +143,16 @@ async function ensureGeneratedArtifacts() {
     { cwd: projectRoot }
   );
 
-  const baselineArgs = ["run", "generate:baseline", "--", "--proto", "proto/simple.proto", "--pruneDefaults"];
+  console.log(
+    shouldPruneDefaults
+      ? "Generating baseline artifacts with --pruneDefaults…"
+      : "Generating baseline artifacts without --pruneDefaults…"
+  );
+
+  const baselineArgs = ["run", "generate:baseline", "--", "--proto", "proto/simple.proto"];
+  if (shouldPruneDefaults) {
+    baselineArgs.push("--pruneDefaults");
+  }
   for (const filePath of protoFiles) {
     baselineArgs.push("--proto", filePath);
   }
