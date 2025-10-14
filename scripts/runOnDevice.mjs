@@ -66,7 +66,7 @@ async function ensureGeneratedArtifacts() {
     }
   }
 
-  const generateArgs = ["run", "generate:brs", "--", "--proto", "proto/simple.proto"];
+  const generateArgs = ["run", "generate:brs", "--", "--proto", "proto/simple.proto", "--pruneDefaults"];
   for (const filePath of protoFiles) {
     generateArgs.push("--proto", filePath);
   }
@@ -77,7 +77,7 @@ async function ensureGeneratedArtifacts() {
     { cwd: projectRoot }
   );
 
-  const baselineArgs = ["run", "generate:baseline", "--", "--proto", "proto/simple.proto"];
+  const baselineArgs = ["run", "generate:baseline", "--", "--proto", "proto/simple.proto", "--pruneDefaults"];
   for (const filePath of protoFiles) {
     baselineArgs.push("--proto", filePath);
   }

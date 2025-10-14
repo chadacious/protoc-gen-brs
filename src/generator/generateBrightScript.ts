@@ -6,6 +6,7 @@ import {
   collectMessageDescriptors,
   MessageDescriptor,
   MessageFieldDescriptor,
+  PACKABLE_SCALAR_TYPES,
   SupportedScalarType
 } from "./schemaUtils";
 import { resolveScalarDefault, formatDefaultLiteral } from "./defaultValueUtils";
@@ -213,17 +214,9 @@ function renderMessageEncodeField(field: Extract<MessageFieldDescriptor, { kind:
     lines.push(indent(`if ${loopVar} <> invalid then`, indentLevel + 2));
     lines.push(indent(`${encodedVar} = ${childEncode}(${loopVar})`, indentLevel + 3));
     lines.push(indent(`${bytesVar} = __pb_fromBase64(${encodedVar})`, indentLevel + 3));
-    if (shouldPruneDefaults()) {
-      lines.push(indent(`if ${bytesVar}.Count() > 0 then`, indentLevel + 3));
-      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 4));
-      lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 4));
-      lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 4));
-      lines.push(indent("end if", indentLevel + 3));
-    } else {
-      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 3));
-      lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 3));
-      lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 3));
-    }
+    lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 3));
+    lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 3));
+    lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 3));
     lines.push(indent("end if", indentLevel + 2));
     lines.push(indent("end for", indentLevel + 1));
     lines.push(indent("end if", indentLevel));
@@ -232,17 +225,9 @@ function renderMessageEncodeField(field: Extract<MessageFieldDescriptor, { kind:
     lines.push(indent(`if ${valueVar} <> invalid then`, indentLevel));
     lines.push(indent(`${encodedVar} = ${childEncode}(${valueVar})`, indentLevel + 1));
     lines.push(indent(`${bytesVar} = __pb_fromBase64(${encodedVar})`, indentLevel + 1));
-    if (shouldPruneDefaults()) {
-      lines.push(indent(`if ${bytesVar}.Count() > 0 then`, indentLevel + 1));
-      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 2));
-      lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 2));
-      lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 2));
-      lines.push(indent("end if", indentLevel + 1));
-    } else {
-      lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 1));
-      lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 1));
-      lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 1));
-    }
+    lines.push(indent(`__pb_writeVarint(bytes, ${field.tag})`, indentLevel + 1));
+    lines.push(indent(`__pb_writeVarint(bytes, ${bytesVar}.Count())`, indentLevel + 1));
+    lines.push(indent(`__pb_appendByteArray(bytes, ${bytesVar})`, indentLevel + 1));
     lines.push(indent("end if", indentLevel));
   }
 
@@ -256,6 +241,9 @@ function renderScalarEncodeField(field: Extract<MessageFieldDescriptor, { kind: 
   const itemsVar = `${names.base}Items`;
   const singleVar = `${names.base}Single`;
   const loopVar = `${names.base}Item`;
+  const isPackableScalar = PACKABLE_SCALAR_TYPES.has(field.scalarType);
+  const canEmitEmptyPacked = shouldPruneDefaults() && isPackableScalar;
+  const emptyPackedTag = canEmitEmptyPacked ? field.tag - field.wireType + 2 : undefined;
 
   lines.push(...renderValueRetrieval(valueVar, field, indentLevel));
 
@@ -266,25 +254,49 @@ function renderScalarEncodeField(field: Extract<MessageFieldDescriptor, { kind: 
     lines.push(indent(`if ${itemsVar} <> invalid then`, indentLevel));
     if (field.isPacked) {
       const packedVar = `${names.base}Packed`;
+      const packedLengthVar = `${names.base}PackedLength`;
       lines.push(indent(`${packedVar} = __pb_createByteArray()`, indentLevel + 1));
       lines.push(indent(`for each ${loopVar} in ${itemsVar}`, indentLevel + 1));
       lines.push(...renderScalarPackedWrite(field.scalarType, loopVar, packedVar, indentLevel + 2));
       lines.push(indent("end for", indentLevel + 1));
-      lines.push(indent(`if ${packedVar}.Count() > 0 then`, indentLevel + 1));
-      lines.push(indent(`__pb_writeVarint(bytes, ${field.packedTag})`, indentLevel + 2));
-      lines.push(indent(`__pb_writeVarint(bytes, ${packedVar}.Count())`, indentLevel + 2));
-      lines.push(indent(`__pb_appendByteArray(bytes, ${packedVar})`, indentLevel + 2));
-      lines.push(indent("end if", indentLevel + 1));
+      if (shouldPruneDefaults()) {
+        lines.push(indent(`${packedLengthVar} = ${packedVar}.Count()`, indentLevel + 1));
+        lines.push(indent(`if ${packedLengthVar} > 0 then`, indentLevel + 1));
+        lines.push(indent(`__pb_writeVarint(bytes, ${field.packedTag})`, indentLevel + 2));
+        lines.push(indent(`__pb_writeVarint(bytes, ${packedLengthVar})`, indentLevel + 2));
+        lines.push(indent(`__pb_appendByteArray(bytes, ${packedVar})`, indentLevel + 2));
+        lines.push(indent(`else if ${itemsVar}.Count() = 0 then`, indentLevel + 1));
+        lines.push(indent(`__pb_writeVarint(bytes, ${field.packedTag})`, indentLevel + 2));
+        lines.push(indent(`__pb_writeVarint(bytes, 0)`, indentLevel + 2));
+        lines.push(indent("end if", indentLevel + 1));
+      } else {
+        lines.push(indent(`if ${packedVar}.Count() > 0 then`, indentLevel + 1));
+        lines.push(indent(`__pb_writeVarint(bytes, ${field.packedTag})`, indentLevel + 2));
+        lines.push(indent(`__pb_writeVarint(bytes, ${packedVar}.Count())`, indentLevel + 2));
+        lines.push(indent(`__pb_appendByteArray(bytes, ${packedVar})`, indentLevel + 2));
+        lines.push(indent("end if", indentLevel + 1));
+      }
     } else {
       lines.push(indent(`for each ${loopVar} in ${itemsVar}`, indentLevel + 1));
       lines.push(...renderScalarUnpackedWrite(field.scalarType, loopVar, field.tag, indentLevel + 2));
       lines.push(indent("end for", indentLevel + 1));
+      if (canEmitEmptyPacked && emptyPackedTag !== undefined) {
+        lines.push(indent(`if ${itemsVar}.Count() = 0 then`, indentLevel + 1));
+        lines.push(indent(`__pb_writeVarint(bytes, ${emptyPackedTag})`, indentLevel + 2));
+        lines.push(indent(`__pb_writeVarint(bytes, 0)`, indentLevel + 2));
+        lines.push(indent("end if", indentLevel + 1));
+      }
+    }
+    if (canEmitEmptyPacked && emptyPackedTag !== undefined) {
+      lines.push(indent("else", indentLevel));
+      lines.push(indent(`__pb_writeVarint(bytes, ${emptyPackedTag})`, indentLevel + 1));
+      lines.push(indent(`__pb_writeVarint(bytes, 0)`, indentLevel + 1));
     }
     lines.push(indent("end if", indentLevel));
   } else {
     lines.push("");
     lines.push(indent(`if ${valueVar} <> invalid then`, indentLevel));
-    if (shouldPruneDefaults() && !field.isRequired) {
+    if (shouldPruneDefaults()) {
       const defaultDescriptor = resolveScalarDefault(field.field, field.scalarType);
       const defaultLiteral = formatDefaultLiteral(defaultDescriptor);
       lines.push(
@@ -344,7 +356,7 @@ function renderEnumEncodeField(descriptor: MessageDescriptor, field: Extract<Mes
     lines.push("");
     lines.push(indent(`if ${valueVar} <> invalid then`, indentLevel));
     lines.push(indent(`numericValue = ${normalizeFn}(${valueVar})`, indentLevel + 1));
-    if (shouldPruneDefaults() && !field.isRequired) {
+    if (shouldPruneDefaults()) {
       const defaultDescriptor = resolveScalarDefault(field.field, "enum", field.enumInfo);
       const defaultLiteral = formatDefaultLiteral(defaultDescriptor);
       lines.push(
@@ -789,6 +801,12 @@ function renderDecodeFunction(descriptor: MessageDescriptor): string[] {
   }
 
   lines.push(indent("end while", 1));
+  if (shouldPruneDefaults()) {
+    const defaultAssignments = renderDecodeDefaultAssignments(descriptor, 1);
+    if (defaultAssignments.length > 0) {
+      lines.push(...defaultAssignments);
+    }
+  }
   lines.push(indent("return message", 1));
   lines.push("end function");
 
@@ -907,6 +925,74 @@ function renderScalarRepeatedDecode(
   lines.push(indent("end if", indentLevel));
 
   return lines;
+}
+
+function renderDecodeDefaultAssignments(descriptor: MessageDescriptor, indentLevel: number): string[] {
+  const lines: string[] = [];
+  descriptor.fields.forEach((field) => {
+    const parentEdition = (field.field.parent as any)?._edition;
+    const isProto3 = parentEdition === "proto3" || parentEdition === undefined;
+    if (field.isRepeated) {
+      if (!isProto3) {
+        return;
+      }
+      lines.push(indent(`if message.DoesExist("${field.name}") = false then`, indentLevel));
+      lines.push(indent(`message.${field.name} = CreateObject("roArray", 0, true)`, indentLevel + 1));
+      lines.push(indent("end if", indentLevel));
+      return;
+    }
+
+    if (field.kind === "message") {
+      return;
+    }
+
+    if (!isProto3) {
+      return;
+    }
+
+    const defaultExpr = buildScalarDefaultExpression(descriptor, field);
+    if (defaultExpr) {
+      lines.push(indent(`if message.DoesExist("${field.name}") = false then`, indentLevel));
+      lines.push(indent(`message.${field.name} = ${defaultExpr}`, indentLevel + 1));
+      lines.push(indent("end if", indentLevel));
+    }
+  });
+  return lines;
+}
+
+function buildScalarDefaultExpression(descriptor: MessageDescriptor, field: Extract<MessageFieldDescriptor, { kind: "scalar" | "enum" }>): string | undefined {
+  if (field.kind === "enum") {
+    const defaultDescriptor = resolveScalarDefault(field.field, "enum", field.enumInfo);
+    const enumNameFn = buildEnumNameFunctionName(descriptor, field);
+    const numericValue = Number(defaultDescriptor.value);
+    return `${enumNameFn}(${numericValue})`;
+  }
+
+  switch (field.scalarType) {
+    case "bool":
+      return "false";
+    case "string":
+    case "bytes":
+      return "\"\"";
+    case "float":
+    case "double":
+    case "int32":
+    case "uint32":
+    case "sint32":
+    case "fixed32":
+    case "sfixed32":
+      return "0";
+    case "int64":
+    case "sfixed64":
+      return '__pb_toSignedInt64String("0")';
+    case "sint64":
+      return '__pb_decodeZigZag64("0")';
+    case "uint64":
+    case "fixed64":
+      return '"0"';
+    default:
+      return undefined;
+  }
 }
 
 function renderScalarSingleRead(

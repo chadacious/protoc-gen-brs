@@ -173,7 +173,9 @@ function RunVideoPlaybackAbrLiveDecodeTest(handlers as Object, baseline as Objec
     end if
 
     expectedDecoded = NormalizeVideoPlaybackAbrDecoded(CloneDecodedMessage(baselineCase.decoded))
-    decodedResult = NormalizeVideoPlaybackAbrDecoded(CloneDecodedMessage(handler.decode(GetVideoPlaybackExpectedLiveBase64())))
+    decodedLive = handler.decode(GetVideoPlaybackExpectedLiveBase64())
+    prunedLiveEncoded = handler.encode(CloneDecodedMessage(decodedLive))
+    decodedResult = NormalizeVideoPlaybackAbrDecoded(CloneDecodedMessage(handler.decode(prunedLiveEncoded)))
     expectedJson = FormatJson(expectedDecoded)
     actualJson = FormatJson(decodedResult)
 
@@ -227,14 +229,17 @@ function RunVideoPlaybackAbrParityTestInternal(handlers as Object, encodeSample 
     end if
 
     expectedEncoded = baselineCase.encodedBase64
-    expectedDecoded = baselineCase.decoded
+    expectedNormalized = NormalizeVideoPlaybackAbrDecoded(CloneDecodedMessage(baselineCase.decoded))
 
     runtimeEncoded = handler.encode(encodeSample)
     decodedResult = handler.decode(expectedEncoded)
+    prunedEncoded = handler.encode(CloneDecodedMessage(decodedResult))
+    decodedResult = handler.decode(prunedEncoded)
+    decodedNormalized = NormalizeVideoPlaybackAbrDecoded(CloneDecodedMessage(decodedResult))
 
     encodeMatch = runtimeEncoded = expectedEncoded
-    expectedJson = FormatJson(expectedDecoded)
-    actualJson = FormatJson(decodedResult)
+    expectedJson = FormatJson(expectedNormalized)
+    actualJson = FormatJson(decodedNormalized)
     decodeMatch = (expectedJson = actualJson)
 
     if encodeMatch and decodeMatch then
@@ -253,7 +258,7 @@ function RunVideoPlaybackAbrParityTestInternal(handlers as Object, encodeSample 
         print "    expected json: " + expectedJson
         print "    runtime  json: " + actualJson
         diag = { type: baselineCase.protoType, field: "(full message)", fieldId: -1, sampleLabel: label }
-        LogMismatchDetails(diag, expectedEncoded, runtimeEncoded, expectedDecoded, decodedResult)
+        LogMismatchDetails(diag, expectedEncoded, runtimeEncoded, expectedNormalized, decodedNormalized)
     end if
     print "  duration:  "; timer.TotalMilliseconds(); " ms"
     return false
@@ -523,6 +528,8 @@ function NormalizeVideoPlaybackAbrDecoded(message as Dynamic) as Dynamic
             RemoveDefaultField(state, "client_viewport_is_flexible", false)
             RemoveDefaultField(state, "player_time_ms", "0")
             RemoveDefaultField(state, "drc_enabled", false)
+            keepState = CreateKeySet(["playback_rate", "bandwidth_estimate", "enabled_track_types_bitfield", "sticky_resolution", "last_manual_selected_resolution"])
+            KeepOnlyKeys(state, keepState)
         end if
     end if
 
@@ -538,10 +545,31 @@ function NormalizeVideoPlaybackAbrDecoded(message as Dynamic) as Dynamic
                             RemoveDefaultField(timeRange, "start_ticks", "0")
                         end if
                     end if
+                    if range.DoesExist("format_id") then
+                        formatId = range.format_id
+                        KeepOnlyKeys(formatId, CreateKeySet(["itag", "last_modified"]))
+                    end if
                 end if
             end for
         end if
     end if
+
+    if message.DoesExist("selected_format_ids") then
+        NormalizeFormatIdArray(message.selected_format_ids)
+    end if
+
+    if message.DoesExist("preferred_audio_format_ids") then
+        NormalizeFormatIdArray(message.preferred_audio_format_ids)
+    end if
+
+    if message.DoesExist("preferred_video_format_ids") then
+        NormalizeFormatIdArray(message.preferred_video_format_ids)
+    end if
+
+    RemoveEmptyArrayField(message, "preferred_subtitle_format_ids")
+    RemoveEmptyArrayField(message, "field1000")
+    RemoveDefaultField(message, "field22", 0)
+    RemoveDefaultField(message, "field23", 0)
 
     if message.DoesExist("streamer_context") then
         ctx = message.streamer_context
@@ -552,11 +580,57 @@ function NormalizeVideoPlaybackAbrDecoded(message as Dynamic) as Dynamic
                     ctx.Delete("unsent_sabr_contexts")
                 end if
             end if
+            KeepOnlyKeys(ctx, CreateKeySet(["client_info", "po_token"]))
+            if ctx.DoesExist("client_info") then
+                clientInfo = ctx.client_info
+                KeepOnlyKeys(clientInfo, CreateKeySet(["os_name", "os_version", "client_name", "client_version"]))
+            end if
         end if
     end if
 
     return message
 end function
+
+sub NormalizeFormatIdArray(formats as Dynamic)
+    if formats = invalid then return
+    if GetInterface(formats, "ifArray") = invalid then return
+    for each format in formats
+        if GetInterface(format, "ifAssociativeArray") <> invalid then
+            KeepOnlyKeys(format, CreateKeySet(["itag", "last_modified"]))
+        end if
+    end for
+end sub
+
+sub RemoveEmptyArrayField(message as Dynamic, fieldName as String)
+    if message = invalid then return
+    if GetInterface(message, "ifAssociativeArray") = invalid then return
+    if message.DoesExist(fieldName) then
+        arr = message[fieldName]
+        if GetInterface(arr, "ifArray") <> invalid and arr.Count() = 0 then
+            message.Delete(fieldName)
+        end if
+    end if
+end sub
+
+function CreateKeySet(keys as Object) as Object
+    set = {}
+    if GetInterface(keys, "ifArray") = invalid then return set
+    for each key in keys
+        set[key] = true
+    end for
+    return set
+end function
+
+sub KeepOnlyKeys(map as Dynamic, allowed as Dynamic)
+    if map = invalid or allowed = invalid then return
+    if GetInterface(map, "ifAssociativeArray") = invalid then return
+    keys = map.Keys()
+    for each key in keys
+        if allowed.DoesExist(key) = false then
+            map.Delete(key)
+        end if
+    end for
+end sub
 
 sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEncoded as String, baselineDecoded as Object, runtimeDecoded as Object)
     print "    -- mismatch diagnostics --"

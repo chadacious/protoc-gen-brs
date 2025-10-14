@@ -108,11 +108,11 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
         if (descriptor.isRepeated && Array.isArray(normalizedValue)) {
           normalizedValue.forEach((entry) => {
             if (entry && typeof entry === "object") {
-              pruneDefaultsInMessage(descriptor.childType, entry as Record<string, unknown>);
+              pruneDefaultsInMessage(descriptor.childType, entry as Record<string, unknown>, true);
             }
           });
         } else if (!descriptor.isRepeated && normalizedValue && typeof normalizedValue === "object") {
-          pruneDefaultsInMessage(descriptor.childType, normalizedValue as Record<string, unknown>);
+          pruneDefaultsInMessage(descriptor.childType, normalizedValue as Record<string, unknown>, true);
         }
       }
 
@@ -138,7 +138,7 @@ export async function generateBaselineVectors(options: GenerateBaselineOptions) 
       });
     }
   }
-  const customCases = await loadCustomBaselineCases(bundle.root);
+  const customCases = await loadCustomBaselineCases(bundle.root, pruneDefaults);
 
   const metadataPath = path.join(outputDir, "baseline.json");
   const metadata: BaselineDocument = {
@@ -188,9 +188,12 @@ interface CustomBaselineFile {
   protoType: string;
   sampleLabel?: string;
   value: Record<string, unknown>;
+  encodedBase64?: string;
+  prunedEncodedBase64?: string;
+  prunedValue?: Record<string, unknown>;
 }
 
-async function loadCustomBaselineCases(root: Root): Promise<CustomBaselineCase[]> {
+async function loadCustomBaselineCases(root: Root, pruneDefaults: boolean): Promise<CustomBaselineCase[]> {
   const cases: CustomBaselineCase[] = [];
   if (!(await fs.pathExists(CUSTOM_BASELINE_DIR))) {
     return cases;
@@ -230,16 +233,41 @@ async function loadCustomBaselineCases(root: Root): Promise<CustomBaselineCase[]
       console.warn(`Skipping custom baseline "${filePath}": ${(error as Error).message}`);
       continue;
     }
-    const message = type.fromObject(parsed.value);
-    const encodedBuffer = type.encode(message).finish();
-    const encodedBase64 = Buffer.from(encodedBuffer).toString("base64");
-    const decodedMessage = type.decode(encodedBuffer);
-    const decoded = type.toObject(decodedMessage, { longs: String, enums: String, bytes: String });
+    const effectiveValue = pruneDefaults && parsed.prunedValue ? parsed.prunedValue : parsed.value;
+
+    let encodedBase64: string | undefined;
+    if (pruneDefaults && typeof parsed.prunedEncodedBase64 === "string" && parsed.prunedEncodedBase64.length > 0) {
+      encodedBase64 = parsed.prunedEncodedBase64;
+    } else if (typeof parsed.encodedBase64 === "string" && parsed.encodedBase64.length > 0) {
+      encodedBase64 = parsed.encodedBase64;
+    }
+
+    let decoded: Record<string, unknown>;
+    if (encodedBase64) {
+      try {
+        const encodedBuffer = Buffer.from(encodedBase64, "base64");
+        const decodedMessage = type.decode(encodedBuffer);
+        decoded = type.toObject(decodedMessage, { longs: String, enums: String, bytes: String });
+      } catch {
+      const fallback = type.fromObject(effectiveValue);
+      decoded = type.toObject(fallback, { longs: String, enums: String, bytes: String });
+    }
+  } else {
+      const message = type.fromObject(effectiveValue);
+      const encodedBuffer = type.encode(message).finish();
+      encodedBase64 = Buffer.from(encodedBuffer).toString("base64");
+      const decodedMessage = type.decode(encodedBuffer);
+      decoded = type.toObject(decodedMessage, { longs: String, enums: String, bytes: String });
+    }
+
+    if (pruneDefaults && decoded && typeof decoded === "object") {
+      pruneDefaultsInMessage(type, decoded as Record<string, unknown>, true);
+    }
 
     cases.push({
       protoType: parsed.protoType,
       sampleLabel,
-      value: parsed.value,
+      value: effectiveValue,
       encodedBase64,
       decoded
     });
@@ -815,7 +843,7 @@ function buildSint64Samples(descriptor: SimpleScalarMessageDescriptor): Array<{ 
 }
 
 function escapeBrsString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/\"/g, "\"\"");
+  return value.replace(/\"/g, "\"\"");
 }
 
 function formatBrsValue(value: unknown): string {

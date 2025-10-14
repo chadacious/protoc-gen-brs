@@ -49,5 +49,8 @@ function {{TYPE_NAME}}Decode(encoded as String) as Object
             cursor = nextIndex
         end if
     end while
+    if message.DoesExist("{{FIELD_NAME}}") = false then
+        message.{{FIELD_NAME}} = ""
+    end if
     return message
 end function

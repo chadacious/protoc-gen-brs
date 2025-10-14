@@ -99,7 +99,11 @@ export function valueEqualsDefault(
   }
 }
 
-export function pruneDefaultsInMessage(type: Type, message: Record<string, unknown>): void {
+export function pruneDefaultsInMessage(
+  type: Type,
+  message: Record<string, unknown>,
+  pruneRequiredFields = false
+): void {
   if (!message || typeof message !== "object") {
     return;
   }
@@ -117,13 +121,19 @@ export function pruneDefaultsInMessage(type: Type, message: Record<string, unkno
     if (field.repeated) {
       if (Array.isArray(value) && value.length === 0) {
         delete (message as Record<string, unknown>)[key];
+      } else if (Array.isArray(value) && field.resolvedType instanceof Type) {
+        value.forEach((entry) => {
+          if (entry && typeof entry === "object") {
+            pruneDefaultsInMessage(field.resolvedType as Type, entry as Record<string, unknown>, pruneRequiredFields);
+          }
+        });
       }
       continue;
     }
 
     if (field.resolvedType instanceof Type) {
       if (value && typeof value === "object") {
-        pruneDefaultsInMessage(field.resolvedType, value as Record<string, unknown>);
+        pruneDefaultsInMessage(field.resolvedType, value as Record<string, unknown>, pruneRequiredFields);
       }
       continue;
     }
@@ -140,7 +150,7 @@ export function pruneDefaultsInMessage(type: Type, message: Record<string, unkno
         : undefined
     );
 
-    if (field.required === true) {
+    if (!pruneRequiredFields && field.required === true) {
       continue;
     }
     if (valueEqualsDefault(value, scalarType, descriptor)) {
