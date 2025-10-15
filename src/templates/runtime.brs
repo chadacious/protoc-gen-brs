@@ -19,21 +19,28 @@ end function
 function __pb_normalizeMessageKeys(message as Dynamic, mapping as Object) as Dynamic
     if message = invalid then return message
     if mapping = invalid then return message
-    if GetInterface(message, "ifAssociativeArray") = invalid then return message
     if GetInterface(mapping, "ifAssociativeArray") = invalid then return message
+    if GetInterface(message, "ifAssociativeArray") = invalid then return message
+
+    normalized = {}
+    originalKeys = message.Keys()
+    for each key in originalKeys
+        normalized[key] = message[key]
+    end for
+
     keys = mapping.Keys()
     for each snakeKey in keys
         camelKey = mapping.Lookup(snakeKey)
         if camelKey <> invalid then
-            if message.DoesExist(snakeKey) then
+            if normalized.DoesExist(snakeKey) then
                 ' already present
-            else if message.DoesExist(camelKey) then
-                value = message.Lookup(camelKey)
-                message.AddReplace(snakeKey, value)
+            else if normalized.DoesExist(camelKey) then
+                value = normalized.Lookup(camelKey)
+                normalized.AddReplace(snakeKey, value)
             end if
         end if
     end for
-    return message
+    return normalized
 end function
 
 function __pb_scalarEqualsDefault(value as Dynamic, scalarType as String, defaultValue as Dynamic) as Boolean

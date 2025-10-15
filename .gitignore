@@ -9,3 +9,4 @@ package-lock.json
 .roku-deploy/
 generated/
 .vscode/
+.DS_Store
