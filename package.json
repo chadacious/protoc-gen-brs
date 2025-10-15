@@ -1,6 +1,6 @@
 {
   "name": "protoc-gen-brs",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "BrightScript code generator and test harness for protobuf definitions.",
   "main": "dist/cli.js",
   "bin": {
