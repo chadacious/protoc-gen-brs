@@ -51,12 +51,26 @@ sub Main()
         end if
         print "Verifying "; displayType; " via "; typeName; "."; fieldName; labelSuffix
 
-        if handlers = invalid or handlers.DoesExist(typeName) = false then
-            print "  Missing handler for type."; typeName
-        else
-            handler = handlers[typeName]
-            expectedEncoded = testCase.encodedBase64
-            expectedValue = testCase.decoded[testCase.field]
+        typeKey = typeName
+        if GetInterface(testCase, "ifAssociativeArray") <> invalid then
+            protoType = testCase.Lookup("protoType")
+            if protoType <> invalid and protoType <> "" then
+                typeKey = protoType
+            end if
+        end if
+        if handlers = invalid or handlers.DoesExist(typeKey) = false then
+            if typeKey <> typeName and handlers <> invalid and handlers.DoesExist(typeName) then
+                typeKey = typeName
+            else
+                print "  Missing handler for type."; typeKey
+                print "  duration:  "; caseTimer.TotalMilliseconds(); " ms"
+                continue for
+            end if
+        end if
+
+        handler = handlers[typeKey]
+        expectedEncoded = testCase.encodedBase64
+        expectedValue = testCase.decoded[testCase.field]
 
         actualEncoded = handler.encode(testCase.decoded)
         decodedResult = handler.decode(expectedEncoded)
@@ -103,7 +117,6 @@ sub Main()
                 print "    alternate decode failed for: "; altEncodedFailure
             end if
             LogMismatchDetails(testCase, expectedEncoded, actualEncoded, testCase.decoded, decodedResult)
-        end if
         end if
 
         print "  duration:  "; caseTimer.TotalMilliseconds(); " ms"
@@ -507,12 +520,29 @@ function CloneDecodedMessage(value as Dynamic) as Dynamic
     return value
 end function
 
+function NormalizeComparisonValue(value as Dynamic) as String
+    if value = invalid then return "invalid"
+    typeName = Type(value)
+    if typeName = "String" or typeName = "roString" then
+        return value
+    else if typeName = "Boolean" or typeName = "roBoolean" then
+        if value = true then
+            return "true"
+        else
+            return "false"
+        end if
+    end if
+    return FormatJson(value)
+end function
+
 sub RemoveDefaultField(container as Object, fieldName as String, defaultValue as Dynamic)
     if container = invalid then return
     if GetInterface(container, "ifAssociativeArray") = invalid then return
     if container.DoesExist(fieldName) then
         current = container.Lookup(fieldName)
-        if current = defaultValue then
+        currentKey = NormalizeComparisonValue(current)
+        defaultKey = NormalizeComparisonValue(defaultValue)
+        if currentKey = defaultKey then
             container.Delete(fieldName)
         end if
     end if
@@ -532,6 +562,8 @@ function NormalizeVideoPlaybackAbrDecoded(message as Dynamic) as Dynamic
             KeepOnlyKeys(state, keepState)
         end if
     end if
+
+    RemoveDefaultField(message, "player_time_ms", "0")
 
     if message.DoesExist("buffered_ranges") then
         ranges = message.buffered_ranges

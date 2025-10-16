@@ -7,7 +7,8 @@ import {
   MessageDescriptor,
   MessageFieldDescriptor,
   PACKABLE_SCALAR_TYPES,
-  SupportedScalarType
+  SupportedScalarType,
+  getBrightScriptIdentifier
 } from "./schemaUtils";
 import { resolveScalarDefault, formatDefaultLiteral } from "./defaultValueUtils";
 
@@ -50,12 +51,12 @@ export async function generateBrightScriptArtifacts(options: GenerateBrightScrip
 
   for (const descriptor of messageDescriptors) {
     const messageModule = renderMessageModule(descriptor);
-    const messagePath = path.join(messagesDir, `${descriptor.name}.brs`);
+    const messagePath = path.join(messagesDir, `${descriptor.brsIdentifier}.brs`);
     await fs.writeFile(messagePath, messageModule, "utf8");
 
-    const handlerId = `handler${descriptor.name}`;
-    const encodeFn = `${descriptor.name}Encode`;
-    const decodeFn = `${descriptor.name}Decode`;
+    const handlerId = `handler${descriptor.brsIdentifier}`;
+    const encodeFn = `${descriptor.brsIdentifier}Encode`;
+    const decodeFn = `${descriptor.brsIdentifier}Decode`;
     registryLines.push(
       `    ${handlerId} = {}`,
       `    ${handlerId}.encode = ${encodeFn}`,
@@ -63,6 +64,9 @@ export async function generateBrightScriptArtifacts(options: GenerateBrightScrip
       `    handlers.${descriptor.name} = ${handlerId}`,
       `    handlers["${descriptor.fullName}"] = ${handlerId}`
     );
+    if (descriptor.brsIdentifier !== descriptor.name) {
+      registryLines.push(`    handlers.${descriptor.brsIdentifier} = ${handlerId}`);
+    }
   }
 
   registryLines.push("    return handlers", "end function", "");
@@ -151,7 +155,7 @@ function renderMessageModule(descriptor: MessageDescriptor): string {
 
 function renderEncodeFunction(descriptor: MessageDescriptor): string[] {
   const lines: string[] = [];
-  const fnName = `${descriptor.name}Encode`;
+  const fnName = `${descriptor.brsIdentifier}Encode`;
 
   lines.push(`function ${fnName}(message as Object) as String`);
   const needsNormalization = descriptor.fields.some((field) => field.camelName !== field.name);
@@ -195,7 +199,7 @@ function renderEncodeField(descriptor: MessageDescriptor, field: MessageFieldDes
 function renderMessageEncodeField(field: Extract<MessageFieldDescriptor, { kind: "message" }>, indentLevel: number): string[] {
   const lines: string[] = [];
   const names = createFieldVariableNames(field.name);
-  const childEncode = `${field.childType.name}Encode`;
+  const childEncode = `${getBrightScriptIdentifier(field.childType)}Encode`;
   const valueVar = names.value;
   const bytesVar = `${names.base}ChildBytes`;
   const encodedVar = `${names.base}Encoded`;
@@ -773,7 +777,7 @@ function renderRepeatedSourceNormalization(
 
 function renderDecodeFunction(descriptor: MessageDescriptor): string[] {
   const lines: string[] = [];
-  const fnName = `${descriptor.name}Decode`;
+  const fnName = `${descriptor.brsIdentifier}Decode`;
 
   lines.push(`function ${fnName}(encoded as String) as Object`);
   lines.push(indent("bytes = __pb_fromBase64(encoded)", 1));
@@ -829,7 +833,7 @@ function renderMessageDecodeBody(
   indentLevel: number
 ): string[] {
   const lines: string[] = [];
-  const childDecode = `${field.childType.name}Decode`;
+  const childDecode = `${getBrightScriptIdentifier(field.childType)}Decode`;
   const lengthVar = `${sanitizeIdentifier(field.name)}Length`;
   const childBytesVar = `${sanitizeIdentifier(field.name)}ChildBytes`;
   const encodedVar = `${sanitizeIdentifier(field.name)}Child`;
@@ -946,10 +950,6 @@ function renderDecodeDefaultAssignments(descriptor: MessageDescriptor, indentLev
       return;
     }
 
-    if (!isProto3) {
-      return;
-    }
-
     const defaultExpr = buildScalarDefaultExpression(descriptor, field);
     if (defaultExpr) {
       lines.push(indent(`if message.DoesExist("${field.name}") = false then`, indentLevel));
@@ -968,12 +968,16 @@ function buildScalarDefaultExpression(descriptor: MessageDescriptor, field: Extr
     return `${enumNameFn}(${numericValue})`;
   }
 
+  const defaultDescriptor = resolveScalarDefault(field.field, field.scalarType);
+  const normalizedValue = defaultDescriptor?.value;
+  const normalizedString = String(normalizedValue ?? "0");
+
   switch (field.scalarType) {
     case "bool":
-      return "false";
+      return normalizedValue === true ? "true" : "false";
     case "string":
     case "bytes":
-      return "\"\"";
+      return formatDefaultLiteral(defaultDescriptor);
     case "float":
     case "double":
     case "int32":
@@ -981,15 +985,15 @@ function buildScalarDefaultExpression(descriptor: MessageDescriptor, field: Extr
     case "sint32":
     case "fixed32":
     case "sfixed32":
-      return "0";
+      return normalizedString;
     case "int64":
     case "sfixed64":
-      return '__pb_toSignedInt64String("0")';
+      return `__pb_toSignedInt64String("${normalizedString}")`;
     case "sint64":
-      return '__pb_decodeZigZag64("0")';
+      return `__pb_decodeZigZag64("${normalizedString}")`;
     case "uint64":
     case "fixed64":
-      return '"0"';
+      return `"${normalizedString}"`;
     default:
       return undefined;
   }
@@ -1308,7 +1312,7 @@ function renderEnumHelperFunctions(descriptor: MessageDescriptor): string[] {
     if (field.kind !== "enum") {
       continue;
     }
-    const key = `${descriptor.name}_${field.name}`;
+    const key = `${descriptor.brsIdentifier}_${field.name}`;
     if (processed.has(key)) {
       continue;
     }
@@ -1346,7 +1350,7 @@ function renderEnumHelperFunctions(descriptor: MessageDescriptor): string[] {
 
     lines.push(`function ${valuesFn}() as Object`);
     lines.push(indent("globalAA = GetGlobalAA()", 1));
-    lines.push(indent(`key = "${descriptor.name}_${field.name}_EnumValues"`, 1));
+    lines.push(indent(`key = "${descriptor.brsIdentifier}_${field.name}_EnumValues"`, 1));
     lines.push(indent("if globalAA <> invalid and globalAA.DoesExist(key) then", 1));
     lines.push(indent("return globalAA[key]", 2));
     lines.push(indent("end if", 1));
@@ -1362,7 +1366,7 @@ function renderEnumHelperFunctions(descriptor: MessageDescriptor): string[] {
 
     lines.push(`function ${namesFn}() as Object`);
     lines.push(indent("globalAA = GetGlobalAA()", 1));
-    lines.push(indent(`key = "${descriptor.name}_${field.name}_EnumNames"`, 1));
+    lines.push(indent(`key = "${descriptor.brsIdentifier}_${field.name}_EnumNames"`, 1));
     lines.push(indent("if globalAA <> invalid and globalAA.DoesExist(key) then", 1));
     lines.push(indent("return globalAA[key]", 2));
     lines.push(indent("end if", 1));
@@ -1385,19 +1389,19 @@ function renderEnumHelperFunctions(descriptor: MessageDescriptor): string[] {
 }
 
 function buildEnumNormalizeFunctionName(descriptor: MessageDescriptor, field: Extract<MessageFieldDescriptor, { kind: "enum" }>): string {
-  return `${descriptor.name}_${sanitizeIdentifier(field.name)}_normalizeEnum`;
+  return `${descriptor.brsIdentifier}_${sanitizeIdentifier(field.name)}_normalizeEnum`;
 }
 
 function buildEnumNameFunctionName(descriptor: MessageDescriptor, field: Extract<MessageFieldDescriptor, { kind: "enum" }>): string {
-  return `${descriptor.name}_${sanitizeIdentifier(field.name)}_enumName`;
+  return `${descriptor.brsIdentifier}_${sanitizeIdentifier(field.name)}_enumName`;
 }
 
 function buildEnumValuesFunctionName(descriptor: MessageDescriptor, field: Extract<MessageFieldDescriptor, { kind: "enum" }>): string {
-  return `${descriptor.name}_${sanitizeIdentifier(field.name)}_getEnumValues`;
+  return `${descriptor.brsIdentifier}_${sanitizeIdentifier(field.name)}_getEnumValues`;
 }
 
 function buildEnumNamesFunctionName(descriptor: MessageDescriptor, field: Extract<MessageFieldDescriptor, { kind: "enum" }>): string {
-  return `${descriptor.name}_${sanitizeIdentifier(field.name)}_getEnumNames`;
+  return `${descriptor.brsIdentifier}_${sanitizeIdentifier(field.name)}_getEnumNames`;
 }
 
 function createFieldVariableNames(fieldName: string) {

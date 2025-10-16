@@ -40,10 +40,13 @@ export interface SimpleMessageFieldDescriptor {
   isRepeated: boolean;
 }
 
+const BRIGHTSCRIPT_IDENTIFIER_KEY = "__pbBrsIdentifier";
+
 export interface MessageDescriptor {
   type: Type;
   fullName: string;
   name: string;
+  brsIdentifier: string;
   fields: MessageFieldDescriptor[];
 }
 
@@ -152,9 +155,15 @@ const WIRE_TYPE_BY_SCALAR: Record<Exclude<SupportedScalarType, "enum"> | "enum",
 
 export function collectMessageDescriptors(root: Root): MessageDescriptor[] {
   const types = collectTypes(root);
+  const nameCounts = new Map<string, number>();
+  types.forEach((type) => {
+    if (!isMapEntry(type)) {
+      nameCounts.set(type.name, (nameCounts.get(type.name) ?? 0) + 1);
+    }
+  });
   return types
     .filter((type) => !isMapEntry(type))
-    .map((type) => createMessageDescriptor(type))
+    .map((type) => createMessageDescriptor(type, nameCounts))
     .filter((descriptor): descriptor is MessageDescriptor => descriptor !== undefined);
 }
 
@@ -254,7 +263,7 @@ function extractEnumInfo(field: Field): EnumFieldDescriptor["enumInfo"] | undefi
   };
 }
 
-function createMessageDescriptor(type: Type): MessageDescriptor | undefined {
+function createMessageDescriptor(type: Type, nameCounts: Map<string, number>): MessageDescriptor | undefined {
   const fields = type.fieldsArray?.map((field) => createFieldDescriptor(type, field)).filter(
     (field): field is MessageFieldDescriptor => field !== undefined
   );
@@ -263,10 +272,15 @@ function createMessageDescriptor(type: Type): MessageDescriptor | undefined {
     return undefined;
   }
 
+  const occurrenceCount = nameCounts.get(type.name) ?? 0;
+  const brsIdentifier = occurrenceCount > 1 ? buildUniqueMessageIdentifier(type) : type.name;
+  setBrightScriptIdentifier(type, brsIdentifier);
+
   return {
     type,
     fullName: type.fullName.replace(/^\./, ""),
     name: type.name,
+    brsIdentifier,
     fields
   };
 }
@@ -413,6 +427,20 @@ function isMapEntry(type: Type): boolean {
   return options?.mapEntry === true || options?.map_entry === true;
 }
 
+function setBrightScriptIdentifier(type: Type, identifier: string) {
+  const target = type as Type & { [BRIGHTSCRIPT_IDENTIFIER_KEY]?: string };
+  target[BRIGHTSCRIPT_IDENTIFIER_KEY] = identifier;
+}
+
+export function getBrightScriptIdentifier(type: Type): string {
+  const target = type as Type & { [BRIGHTSCRIPT_IDENTIFIER_KEY]?: string };
+  const assigned = target[BRIGHTSCRIPT_IDENTIFIER_KEY];
+  if (assigned && assigned.length > 0) {
+    return assigned;
+  }
+  return type.name;
+}
+
 function toCamelCase(name: string): string {
   if (!name.includes("_")) {
     const first = name.slice(0, 1);
@@ -428,4 +456,36 @@ function toCamelCase(name: string): string {
     .map((part) => (part.length > 0 ? part[0].toUpperCase() + part.slice(1) : ""))
     .join("");
   return `${head}${tail}`;
+}
+
+function buildUniqueMessageIdentifier(type: Type): string {
+  const fullName = type.fullName.replace(/^\./, "");
+  if (fullName.length === 0) {
+    return ensureValidIdentifier(type.name || "Message");
+  }
+  const segments = fullName.split(".");
+  const transformed = segments.map((segment) => toPascalCaseSegment(segment));
+  const combined = transformed.join("");
+  return ensureValidIdentifier(combined.length > 0 ? combined : type.name);
+}
+
+function toPascalCaseSegment(segment: string): string {
+  const parts = segment.split(/[^A-Za-z0-9]+/).filter((part) => part.length > 0);
+  if (parts.length === 0) {
+    return segment.length > 0 ? segment[0].toUpperCase() + segment.slice(1) : "Segment";
+  }
+  return parts
+    .map((part) => (part.length > 0 ? part[0].toUpperCase() + part.slice(1) : ""))
+    .join("");
+}
+
+function ensureValidIdentifier(name: string): string {
+  let cleaned = name.replace(/[^A-Za-z0-9_]/g, "");
+  if (cleaned.length === 0) {
+    cleaned = "Message";
+  }
+  if (!/^[A-Za-z_]/.test(cleaned)) {
+    cleaned = `Message${cleaned}`;
+  }
+  return cleaned;
 }
