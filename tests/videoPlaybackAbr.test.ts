@@ -19,17 +19,8 @@ import { Int32 } from "brs/lib/brsTypes/Int32";
 const GOOGLE_VIDEO_PROTO_ROOT = "/Users/chad/Projects/Temp/googlevideo/protos";
 const VIDEO_STREAMING_DIR = path.join(GOOGLE_VIDEO_PROTO_ROOT, "video_streaming");
 const MISC_DIR = path.join(GOOGLE_VIDEO_PROTO_ROOT, "misc");
-const ENTRY_PROTO = path.join(VIDEO_STREAMING_DIR, "video_playback_abr_request.proto");
 const MESSAGE_TYPE = "video_streaming.VideoPlaybackAbrRequest";
-const REQUIRED_PROTOS = [
-  path.join(MISC_DIR, "common.proto"),
-  path.join(VIDEO_STREAMING_DIR, "time_range.proto"),
-  path.join(VIDEO_STREAMING_DIR, "buffered_range.proto"),
-  path.join(VIDEO_STREAMING_DIR, "video_playback_abr_request.proto"),
-  path.join(VIDEO_STREAMING_DIR, "media_capabilities.proto"),
-  path.join(VIDEO_STREAMING_DIR, "client_abr_state.proto"),
-  path.join(VIDEO_STREAMING_DIR, "streamer_context.proto")
-];
+const ENTRY_PROTO = path.join(VIDEO_STREAMING_DIR, "video_playback_abr_request.proto");
 
 interface SamplePayload {
   [key: string]: unknown;
@@ -604,12 +595,37 @@ function callBrsFunction(callable: BrsTypes.Callable | undefined, interpreter: I
   }
 }
 
+async function collectRequiredProtoFiles(): Promise<string[]> {
+  const protoFiles = new Set<string>([ENTRY_PROTO]);
+
+  async function addProtoFiles(dir: string) {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await addProtoFiles(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith(".proto")) {
+        protoFiles.add(fullPath);
+      }
+    }
+  }
+
+  await addProtoFiles(MISC_DIR);
+  await addProtoFiles(VIDEO_STREAMING_DIR);
+
+  return Array.from(protoFiles).sort();
+}
+
 async function run() {
+  const requiredProtos = await collectRequiredProtoFiles();
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "brs-video-abr-"));
   const outputDir = path.join(tempRoot, "generated");
 
   await generateBrightScriptArtifacts({
-    protoPaths: [ENTRY_PROTO],
+    protoPaths: requiredProtos,
     outputDir
   });
 
@@ -641,7 +657,7 @@ async function run() {
   const decodeFn = interpreter.getCallableFunction("VideoPlaybackAbrRequestDecode");
 
   const root = new protobuf.Root();
-  for (const protoPath of REQUIRED_PROTOS) {
+  for (const protoPath of requiredProtos) {
     const raw = await fs.readFile(protoPath, "utf8");
     const sanitized = raw
       .split("\n")

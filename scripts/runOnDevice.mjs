@@ -12,15 +12,6 @@ const projectRoot = path.resolve(__dirname, "..");
 const OUT_DIR = path.join(projectRoot, "out");
 const LOG_PATH = path.join(OUT_DIR, "roku-log.txt");
 const DEFAULT_VIDEO_PROTO_ROOT = "/Users/chad/Projects/Temp/googlevideo/protos";
-const VIDEO_PROTO_FILES = [
-  "misc/common.proto",
-  "video_streaming/time_range.proto",
-  "video_streaming/media_capabilities.proto",
-  "video_streaming/client_abr_state.proto",
-  "video_streaming/streamer_context.proto",
-  "video_streaming/buffered_range.proto",
-  "video_streaming/video_playback_abr_request.proto"
-];
 
 const host = process.env.ROKU_HOST;
 const password = process.env.ROKU_PASSWORD;
@@ -103,6 +94,45 @@ async function runCommand(command, args, options = {}) {
   });
 }
 
+async function collectVideoProtoFiles(rootDir) {
+  const miscDir = path.join(rootDir, "misc");
+  const videoStreamingDir = path.join(rootDir, "video_streaming");
+
+  for (const dir of [miscDir, videoStreamingDir]) {
+    try {
+      await fsPromises.access(dir);
+    } catch {
+      throw new Error(`Required proto directory not found: "${dir}"`);
+    }
+  }
+
+  const discovered = new Set();
+
+  async function visit(dir) {
+    const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await visit(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith(".proto")) {
+        discovered.add(fullPath);
+      }
+    }
+  }
+
+  await visit(miscDir);
+  await visit(videoStreamingDir);
+
+  const files = Array.from(discovered).sort();
+  if (files.length === 0) {
+    throw new Error(`No .proto files found under "${rootDir}"`);
+  }
+  return files;
+}
+
 async function ensureGeneratedArtifacts() {
   const videoProtoRoot = process.env.VIDEO_PROTO_ROOT ?? DEFAULT_VIDEO_PROTO_ROOT;
   try {
@@ -114,14 +144,7 @@ async function ensureGeneratedArtifacts() {
     );
   }
 
-  const protoFiles = VIDEO_PROTO_FILES.map((relative) => path.join(videoProtoRoot, relative));
-  for (const filePath of protoFiles) {
-    try {
-      await fsPromises.access(filePath);
-    } catch {
-      throw new Error(`Unable to locate required proto at "${filePath}"`);
-    }
-  }
+  const protoFiles = await collectVideoProtoFiles(videoProtoRoot);
 
   console.log(
     shouldPruneDefaults

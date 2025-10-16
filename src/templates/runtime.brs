@@ -830,7 +830,19 @@ end function
 
 function __pb_fromBase64(encoded as String) as Object
     ba = CreateObject("roByteArray")
-    ba.FromBase64String(encoded)
+    normalized = encoded
+    if normalized = invalid then normalized = ""
+    normalized = normalized.Trim()
+    normalized = normalized.Replace("-", "+")
+    normalized = normalized.Replace("_", "/")
+    remainder = Len(normalized) MOD 4
+    if remainder > 0 then
+        padding = 4 - remainder
+        for i = 1 to padding
+            normalized = normalized + "="
+        end for
+    end if
+    ba.FromBase64String(normalized)
     return ba
 end function
 
