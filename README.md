@@ -34,6 +34,8 @@ protoc-gen-brs baseline \
 
 Both commands accept multiple `--proto` values (files or directories).
 
+Decoder field casing defaults to snake_case. Pass `--decodeCase camel` to generate decoders that hydrate camelCase keys (useful for BrightScript code that prefers Roku script conventions), or `--decodeCase both` to emit both snake_case and camelCase keys simultaneously.
+
 ## Prerequisites
 
 - Node.js 18+ (the toolchain relies on ESM compatible features and async/await).

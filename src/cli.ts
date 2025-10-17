@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { hideBin } from "yargs/helpers";
 import yargs, { ArgumentsCamelCase } from "yargs";
-import { generateBrightScriptArtifacts } from "./generator/generateBrightScript";
+import { generateBrightScriptArtifacts, DecodeFieldCase } from "./generator/generateBrightScript";
 import { generateBaselineVectors } from "./generator/generateBaseline";
 import { ensureWorkspace } from "./util/workspace";
 
@@ -10,6 +10,7 @@ type GenerateCommandArgs = {
   outDir: string;
   config?: string;
   pruneDefaults?: boolean;
+  decodeCase?: DecodeFieldCase;
 };
 
 type BaselineCommandArgs = {
@@ -49,6 +50,12 @@ async function main() {
             type: "boolean",
             default: false,
             describe: "Skip encoding fields when their values equal the protobuf default"
+          })
+          .option("decodeCase", {
+            type: "string",
+            choices: ["snake", "camel", "both"],
+            describe: "Field casing to use when returning decoded messages",
+            default: "snake"
           }),
       async (argv: ArgumentsCamelCase<GenerateCommandArgs>) => {
         const protoLocations = argv.proto.map(String);
@@ -56,7 +63,8 @@ async function main() {
           protoPaths: protoLocations,
           outputDir: String(argv.outDir),
           configPath: argv.config ? String(argv.config) : undefined,
-          pruneDefaults: argv.pruneDefaults === true
+          pruneDefaults: argv.pruneDefaults === true,
+          decodeFieldCase: (argv.decodeCase as DecodeFieldCase) ?? "snake"
         });
       }
     )

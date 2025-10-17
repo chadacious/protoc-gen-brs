@@ -17,14 +17,22 @@ export interface GenerateBrightScriptOptions {
   outputDir: string;
   configPath?: string;
   pruneDefaults?: boolean;
+  decodeFieldCase?: DecodeFieldCase;
 }
 
 const generationSettings = {
-  pruneDefaultValues: false
+  pruneDefaultValues: false,
+  decodeFieldCase: "snake" as DecodeFieldCase
 };
+
+export type DecodeFieldCase = "snake" | "camel" | "both";
 
 function shouldPruneDefaults(): boolean {
   return generationSettings.pruneDefaultValues;
+}
+
+function getDecodeFieldCase(): DecodeFieldCase {
+  return generationSettings.decodeFieldCase;
 }
 
 export async function generateBrightScriptArtifacts(options: GenerateBrightScriptOptions) {
@@ -32,6 +40,7 @@ export async function generateBrightScriptArtifacts(options: GenerateBrightScrip
   await fs.ensureDir(resolvedOutput);
 
   generationSettings.pruneDefaultValues = options.pruneDefaults === true;
+  generationSettings.decodeFieldCase = options.decodeFieldCase ?? "snake";
 
   const bundle = await loadProtoBundle(options.protoPaths);
   const messageDescriptors = collectMessageDescriptors(bundle.root);
@@ -711,10 +720,10 @@ function renderValueRetrieval(valueVar: string, field: MessageFieldDescriptor, i
   lines.push(indent('if GetInterface(message, "ifAssociativeArray") <> invalid then', indentLevel + 1));
   lines.push(...renderAssociativeLookupForValue(field, valueVar, indentLevel + 2));
   lines.push(indent("else", indentLevel + 1));
-  lines.push(indent(`${valueVar} = message.${field.name}`, indentLevel + 2));
+  lines.push(indent(`${valueVar} = message["${field.name}"]`, indentLevel + 2));
   if (field.camelName !== field.name) {
     lines.push(indent(`if ${valueVar} = invalid then`, indentLevel + 2));
-    lines.push(indent(`${valueVar} = message.${field.camelName}`, indentLevel + 3));
+    lines.push(indent(`${valueVar} = message["${field.camelName}"]`, indentLevel + 3));
     lines.push(indent("end if", indentLevel + 2));
   }
   lines.push(indent("end if", indentLevel + 1));
@@ -734,14 +743,33 @@ function renderAssociativeLookupForValue(field: MessageFieldDescriptor, targetVa
   return lines;
 }
 
+function getDecodeFieldNames(field: MessageFieldDescriptor): string[] {
+  const mode = getDecodeFieldCase();
+  const names: string[] = [];
+  if (mode === "snake" || mode === "both") {
+    names.push(field.name);
+  }
+  if (mode === "camel" || mode === "both") {
+    names.push(field.camelName);
+  }
+  return names.filter((value, index, self) => self.indexOf(value) === index);
+}
+
+function getPrimaryDecodeFieldName(field: MessageFieldDescriptor): string {
+  const names = getDecodeFieldNames(field);
+  return names[0] ?? field.name;
+}
+
 function renderAssociativeLookupForDirect(field: MessageFieldDescriptor, targetVar: string, indentLevel: number): string[] {
   const lines: string[] = [];
-  lines.push(indent(`if message.DoesExist("${field.name}") then`, indentLevel));
-  lines.push(indent(`${targetVar} = message.${field.name}`, indentLevel + 1));
-  if (field.camelName !== field.name) {
-    lines.push(indent(`else if message.DoesExist("${field.camelName}") then`, indentLevel));
-    lines.push(indent(`${targetVar} = message.${field.camelName}`, indentLevel + 1));
-  }
+  const decodeNames = getDecodeFieldNames(field);
+  const primary = decodeNames[0] ?? field.name;
+  lines.push(indent(`if message.DoesExist("${primary}") then`, indentLevel));
+  lines.push(indent(`${targetVar} = message["${primary}"]`, indentLevel + 1));
+  decodeNames.slice(1).forEach((name) => {
+    lines.push(indent(`else if message.DoesExist("${name}") then`, indentLevel));
+    lines.push(indent(`${targetVar} = message["${name}"]`, indentLevel + 1));
+  });
   lines.push(indent("end if", indentLevel));
   return lines;
 }
@@ -752,7 +780,11 @@ function renderMessageFieldAssignments(
   indentLevel: number,
   messageVar = "message"
 ): string[] {
-  return [indent(`${messageVar}.${field.name} = ${valueExpression}`, indentLevel)];
+  const decodeNames = getDecodeFieldNames(field);
+  if (decodeNames.length === 0) {
+    return [indent(`${messageVar}["${field.name}"] = ${valueExpression}`, indentLevel)];
+  }
+  return decodeNames.map((name) => indent(`${messageVar}["${name}"] = ${valueExpression}`, indentLevel));
 }
 
 function renderRepeatedSourceNormalization(
@@ -936,12 +968,15 @@ function renderDecodeDefaultAssignments(descriptor: MessageDescriptor, indentLev
   descriptor.fields.forEach((field) => {
     const parentEdition = (field.field.parent as any)?._edition;
     const isProto3 = parentEdition === "proto3" || parentEdition === undefined;
+    const primaryKey = getPrimaryDecodeFieldName(field);
     if (field.isRepeated) {
       if (!isProto3) {
         return;
       }
-      lines.push(indent(`if message.DoesExist("${field.name}") = false then`, indentLevel));
-      lines.push(indent(`message.${field.name} = CreateObject("roArray", 0, true)`, indentLevel + 1));
+      const valuesVar = `${sanitizeIdentifier(field.name)}DefaultValues`;
+      lines.push(indent(`if message.DoesExist("${primaryKey}") = false then`, indentLevel));
+      lines.push(indent(`${valuesVar} = CreateObject("roArray", 0, true)`, indentLevel + 1));
+      lines.push(...renderMessageFieldAssignments(field, valuesVar, indentLevel + 1));
       lines.push(indent("end if", indentLevel));
       return;
     }
@@ -952,8 +987,10 @@ function renderDecodeDefaultAssignments(descriptor: MessageDescriptor, indentLev
 
     const defaultExpr = buildScalarDefaultExpression(descriptor, field);
     if (defaultExpr) {
-      lines.push(indent(`if message.DoesExist("${field.name}") = false then`, indentLevel));
-      lines.push(indent(`message.${field.name} = ${defaultExpr}`, indentLevel + 1));
+      const defaultVar = `${sanitizeIdentifier(field.name)}DefaultValue`;
+      lines.push(indent(`if message.DoesExist("${primaryKey}") = false then`, indentLevel));
+      lines.push(indent(`${defaultVar} = ${defaultExpr}`, indentLevel + 1));
+      lines.push(...renderMessageFieldAssignments(field, defaultVar, indentLevel + 1));
       lines.push(indent("end if", indentLevel));
     }
   });

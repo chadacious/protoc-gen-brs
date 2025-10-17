@@ -152,7 +152,7 @@ async function ensureGeneratedArtifacts() {
       : "Generating runtime artifacts without --pruneDefaults…"
   );
 
-  const generateArgs = ["run", "generate:brs", "--", "--proto", "proto/simple.proto"];
+  const generateArgs = ["run", "generate:brs", "--", "--proto", "proto/simple.proto", "--decodeCase", "camel"];
   if (shouldPruneDefaults) {
     generateArgs.push("--pruneDefaults");
   }

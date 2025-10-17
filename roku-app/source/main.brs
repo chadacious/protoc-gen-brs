@@ -140,6 +140,12 @@ sub Main()
     end if
     total = total + 1
 
+    camelFieldsPassed = RunVideoPlaybackAbrCamelCaseFieldsTest(handlers)
+    if camelFieldsPassed = true then
+        passed = passed + 1
+    end if
+    total = total + 1
+
     print "Summary: "; passed; " of "; total; " cases passed."
     print "Total duration: "; runTimer.TotalMilliseconds(); " ms"
 end sub
@@ -206,6 +212,173 @@ function RunVideoPlaybackAbrLiveDecodeTest(handlers as Object, baseline as Objec
     LogMismatchDetails(baselineCase, baselineCase.encodedBase64, GetVideoPlaybackExpectedLiveBase64(), expectedDecoded, decodedResult)
     print "  duration:  "; timer.TotalMilliseconds(); " ms"
     return false
+end function
+
+function RunVideoPlaybackAbrCamelCaseFieldsTest(handlers as Object) as Boolean
+    print "Verifying camelCase decode field presence via VideoPlaybackAbrRequest"
+    timer = CreateObject("roTimespan")
+    timer.Mark()
+
+    handler = invalid
+    if handlers <> invalid then
+        if handlers.DoesExist("VideoPlaybackAbrRequest") then
+            handler = handlers["VideoPlaybackAbrRequest"]
+        else if handlers.DoesExist("video_streaming.VideoPlaybackAbrRequest") then
+            handler = handlers["video_streaming.VideoPlaybackAbrRequest"]
+        end if
+    end if
+
+    if handler = invalid then
+        print "  FAIL"
+        print "    handler for VideoPlaybackAbrRequest not found"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+
+    decoded = handler.decode(GetVideoPlaybackExpectedLiveBase64())
+    if decoded = invalid then
+        print "  FAIL"
+        print "    decoded payload was invalid"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+
+    if decoded.DoesExist("clientAbrState") = false then
+        print "  FAIL"
+        print "    camelCase field missing: clientAbrState"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if decoded.DoesExist("client_abr_state") then
+        print "  FAIL"
+        print "    snake_case field present: client_abr_state"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+
+    state = decoded["clientAbrState"]
+    if GetInterface(state, "ifAssociativeArray") = invalid then
+        print "  FAIL"
+        print "    clientAbrState missing expected object value"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if state.DoesExist("bandwidthEstimate") = false or state.DoesExist("bandwidth_estimate") then
+        print "  FAIL"
+        print "    bandwidthEstimate camelCase enforcement failed"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if state.DoesExist("playbackRate") = false then
+        print "  FAIL"
+        print "    playbackRate field missing"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+
+    if decoded.DoesExist("bufferedRanges") = false then
+        print "  FAIL"
+        print "    bufferedRanges camelCase array missing"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    ranges = decoded["bufferedRanges"]
+    if GetInterface(ranges, "ifArray") = invalid or ranges.Count() = 0 then
+        print "  FAIL"
+        print "    bufferedRanges missing expected elements"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    firstRange = ranges[0]
+    if GetInterface(firstRange, "ifAssociativeArray") = invalid then
+        print "  FAIL"
+        print "    bufferedRanges[0] missing expected object value"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if firstRange.DoesExist("formatId") = false or firstRange.DoesExist("format_id") then
+        print "  FAIL"
+        print "    formatId camelCase enforcement failed"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    formatId = firstRange["formatId"]
+    if GetInterface(formatId, "ifAssociativeArray") = invalid then
+        print "  FAIL"
+        print "    formatId missing expected object value"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if formatId.DoesExist("lastModified") = false then
+        print "  FAIL"
+        print "    lastModified field missing in formatId"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+
+    if firstRange.DoesExist("timeRange") = false or firstRange.DoesExist("time_range") then
+        print "  FAIL"
+        print "    timeRange camelCase enforcement failed"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    timeRange = firstRange["timeRange"]
+    if GetInterface(timeRange, "ifAssociativeArray") = invalid then
+        print "  FAIL"
+        print "    timeRange missing expected object value"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if timeRange.DoesExist("durationTicks") = false or timeRange.DoesExist("duration_ticks") then
+        print "  FAIL"
+        print "    durationTicks camelCase enforcement failed"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+
+    if decoded.DoesExist("streamerContext") = false or decoded.DoesExist("streamer_context") then
+        print "  FAIL"
+        print "    streamerContext camelCase enforcement failed"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    streamerContext = decoded["streamerContext"]
+    if GetInterface(streamerContext, "ifAssociativeArray") = invalid then
+        print "  FAIL"
+        print "    streamerContext missing expected object value"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if streamerContext.DoesExist("clientInfo") = false or streamerContext.DoesExist("client_info") then
+        print "  FAIL"
+        print "    clientInfo camelCase enforcement failed"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    clientInfo = streamerContext["clientInfo"]
+    if GetInterface(clientInfo, "ifAssociativeArray") = invalid then
+        print "  FAIL"
+        print "    clientInfo missing expected object value"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if clientInfo.DoesExist("osName") = false or clientInfo.DoesExist("os_name") then
+        print "  FAIL"
+        print "    osName camelCase enforcement failed"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+    if streamerContext.DoesExist("poToken") = false or streamerContext.DoesExist("po_token") then
+        print "  FAIL"
+        print "    poToken camelCase enforcement failed"
+        print "  duration:  "; timer.TotalMilliseconds(); " ms"
+        return false
+    end if
+
+    print "  OK"
+    print "    verified camelCase fields: clientAbrState, bufferedRanges, timeRange, streamerContext"
+    print "  duration:  "; timer.TotalMilliseconds(); " ms"
+    return true
 end function
 
 function RunVideoPlaybackAbrParityTestInternal(handlers as Object, encodeSample as Object, baselineCase as Object, label as String) as Boolean
@@ -363,59 +536,59 @@ function CreateVideoPlaybackAbrSampleCamelCase() as Object
     sample = {}
 
     abrState = {}
-    abrState.playbackRate = 1
-    abrState.playerTimeMs = "0"
-    abrState.clientViewportIsFlexible = false
-    abrState.bandwidthEstimate = "9050000"
-    abrState.drcEnabled = false
-    abrState.enabledTrackTypesBitfield = 2
-    abrState.stickyResolution = 1080
-    abrState.lastManualSelectedResolution = 1080
-    sample.clientAbrState = abrState
+    abrState["playbackRate"] = 1
+    abrState["playerTimeMs"] = "0"
+    abrState["clientViewportIsFlexible"] = false
+    abrState["bandwidthEstimate"] = "9050000"
+    abrState["drcEnabled"] = false
+    abrState["enabledTrackTypesBitfield"] = 2
+    abrState["stickyResolution"] = 1080
+    abrState["lastManualSelectedResolution"] = 1080
+    sample["clientAbrState"] = abrState
 
     bufferedRanges = CreateObject("roArray", 0, true)
     range = {}
-    range.formatId = CreateAudioFormatCamel()
-    range.startTimeMs = "0"
-    range.durationMs = "2147483647"
-    range.startSegmentIndex = 2147483647
-    range.endSegmentIndex = 2147483647
+    range["formatId"] = CreateAudioFormatCamel()
+    range["startTimeMs"] = "0"
+    range["durationMs"] = "2147483647"
+    range["startSegmentIndex"] = 2147483647
+    range["endSegmentIndex"] = 2147483647
     timeRange = {}
-    timeRange.durationTicks = "2147483647"
-    timeRange.startTicks = "0"
-    timeRange.timescale = 1000
-    range.timeRange = timeRange
+    timeRange["durationTicks"] = "2147483647"
+    timeRange["startTicks"] = "0"
+    timeRange["timescale"] = 1000
+    range["timeRange"] = timeRange
     bufferedRanges.Push(range)
-    sample.bufferedRanges = bufferedRanges
+    sample["bufferedRanges"] = bufferedRanges
 
     selectedFormatIds = CreateObject("roArray", 0, true)
     selectedFormatIds.Push(CreateAudioFormatCamel())
-    sample.selectedFormatIds = selectedFormatIds
+    sample["selectedFormatIds"] = selectedFormatIds
 
     preferredAudio = CreateObject("roArray", 0, true)
     preferredAudio.Push(CreateAudioFormatCamel())
-    sample.preferredAudioFormatIds = preferredAudio
+    sample["preferredAudioFormatIds"] = preferredAudio
 
     preferredVideo = CreateObject("roArray", 0, true)
     preferredVideo.Push(CreateVideoFormatCamel())
-    sample.preferredVideoFormatIds = preferredVideo
+    sample["preferredVideoFormatIds"] = preferredVideo
 
-    sample.preferredSubtitleFormatIds = CreateObject("roArray", 0, true)
+    sample["preferredSubtitleFormatIds"] = CreateObject("roArray", 0, true)
 
     streamerContext = {}
     clientInfo = {}
-    clientInfo.osName = "Windows"
-    clientInfo.osVersion = "10.0"
-    clientInfo.clientName = 1
-    clientInfo.clientVersion = "2.20250222.10.00"
-    streamerContext.clientInfo = clientInfo
-    streamerContext.sabrContexts = CreateObject("roArray", 0, true)
-    streamerContext.unsentSabrContexts = CreateObject("roArray", 0, true)
-    streamerContext.poToken = CreateByteArrayFromBase64(GetStreamerContextPoTokenBase64())
-    sample.streamerContext = streamerContext
+    clientInfo["osName"] = "Windows"
+    clientInfo["osVersion"] = "10.0"
+    clientInfo["clientName"] = 1
+    clientInfo["clientVersion"] = "2.20250222.10.00"
+    streamerContext["clientInfo"] = clientInfo
+    streamerContext["sabrContexts"] = CreateObject("roArray", 0, true)
+    streamerContext["unsentSabrContexts"] = CreateObject("roArray", 0, true)
+    streamerContext["poToken"] = CreateByteArrayFromBase64(GetStreamerContextPoTokenBase64())
+    sample["streamerContext"] = streamerContext
 
-    sample.field1000 = CreateObject("roArray", 0, true)
-    sample.videoPlaybackUstreamerConfig = CreateByteArrayFromBase64(GetVideoPlaybackUstreamerConfigBase64())
+    sample["field1000"] = CreateObject("roArray", 0, true)
+    sample["videoPlaybackUstreamerConfig"] = CreateByteArrayFromBase64(GetVideoPlaybackUstreamerConfigBase64())
 
     return sample
 end function
@@ -443,22 +616,22 @@ end function
 
 function CreateAudioFormatCamel() as Object
     format = {}
-    format.itag = 140
-    format.lastModified = "1759475037898391"
-    format.mimeType = "audio/mp4; codecs=""mp4a.40.2"""
-    format.audioQuality = "AUDIO_QUALITY_MEDIUM"
-    format.bitrate = 131174
-    format.averageBitrate = 129531
-    format.quality = "tiny"
-    format.approxDurationMs = 282846
-    format.contentLength = 4579674
-    format.isDrc = false
-    format.isAutoDubbed = false
-    format.isDescriptive = false
-    format.isDubbed = false
-    format.language = invalid
-    format.isOriginal = true
-    format.isSecondary = false
+    format["itag"] = 140
+    format["lastModified"] = "1759475037898391"
+    format["mimeType"] = "audio/mp4; codecs=""mp4a.40.2"""
+    format["audioQuality"] = "AUDIO_QUALITY_MEDIUM"
+    format["bitrate"] = 131174
+    format["averageBitrate"] = 129531
+    format["quality"] = "tiny"
+    format["approxDurationMs"] = 282846
+    format["contentLength"] = 4579674
+    format["isDrc"] = false
+    format["isAutoDubbed"] = false
+    format["isDescriptive"] = false
+    format["isDubbed"] = false
+    format["language"] = invalid
+    format["isOriginal"] = true
+    format["isSecondary"] = false
     return format
 end function
 
@@ -480,17 +653,17 @@ end function
 
 function CreateVideoFormatCamel() as Object
     format = {}
-    format.itag = 399
-    format.lastModified = "1759475866788004"
-    format.width = 1080
-    format.height = 1080
-    format.mimeType = "video/mp4; codecs=""av01.0.08M.08"""
-    format.bitrate = 63000
-    format.averageBitrate = 30563
-    format.quality = "hd1080"
-    format.qualityLabel = "1080p"
-    format.approxDurationMs = 282840
-    format.contentLength = 1080576
+    format["itag"] = 399
+    format["lastModified"] = "1759475866788004"
+    format["width"] = 1080
+    format["height"] = 1080
+    format["mimeType"] = "video/mp4; codecs=""av01.0.08M.08"""
+    format["bitrate"] = 63000
+    format["averageBitrate"] = 30563
+    format["quality"] = "hd1080"
+    format["qualityLabel"] = "1080p"
+    format["approxDurationMs"] = 282840
+    format["contentLength"] = 1080576
     return format
 end function
 
@@ -514,8 +687,21 @@ end function
 
 function CloneDecodedMessage(value as Dynamic) as Dynamic
     if value = invalid then return invalid
-    if GetInterface(value, "ifAssociativeArray") <> invalid or GetInterface(value, "ifArray") <> invalid then
-        return ParseJson(FormatJson(value))
+    if IsAssociativeValue(value) then
+        clone = {}
+        keys = value.Keys()
+        for each key in keys
+            clone[key] = CloneDecodedMessage(value[key])
+        end for
+        return clone
+    else if IsArrayValue(value) then
+        typeName = Type(value)
+        if typeName = "roByteArray" then return value
+        cloneArray = CreateObject("roArray", value.Count(), true)
+        for each item in value
+            cloneArray.Push(CloneDecodedMessage(item))
+        end for
+        return cloneArray
     end if
     return value
 end function
@@ -538,12 +724,12 @@ end function
 sub RemoveDefaultField(container as Object, fieldName as String, defaultValue as Dynamic)
     if container = invalid then return
     if GetInterface(container, "ifAssociativeArray") = invalid then return
-    if container.DoesExist(fieldName) then
-        current = container.Lookup(fieldName)
+    if HasField(container, fieldName) then
+        current = LookupField(container, fieldName)
         currentKey = NormalizeComparisonValue(current)
         defaultKey = NormalizeComparisonValue(defaultValue)
         if currentKey = defaultKey then
-            container.Delete(fieldName)
+            DeleteField(container, fieldName)
         end if
     end if
 end sub
@@ -552,50 +738,80 @@ function NormalizeVideoPlaybackAbrDecoded(message as Dynamic) as Dynamic
     if message = invalid then return message
     if GetInterface(message, "ifAssociativeArray") = invalid then return message
 
-    if message.DoesExist("client_abr_state") then
-        state = message.client_abr_state
-        if GetInterface(state, "ifAssociativeArray") <> invalid then
-            RemoveDefaultField(state, "client_viewport_is_flexible", false)
-            RemoveDefaultField(state, "player_time_ms", "0")
-            RemoveDefaultField(state, "drc_enabled", false)
-            keepState = CreateKeySet(["playback_rate", "bandwidth_estimate", "enabled_track_types_bitfield", "sticky_resolution", "last_manual_selected_resolution"])
-            KeepOnlyKeys(state, keepState)
-        end if
-    end if
-
     RemoveDefaultField(message, "player_time_ms", "0")
 
-    if message.DoesExist("buffered_ranges") then
-        ranges = message.buffered_ranges
-        if GetInterface(ranges, "ifArray") <> invalid then
-            for each range in ranges
-                if GetInterface(range, "ifAssociativeArray") <> invalid then
-                    RemoveDefaultField(range, "start_time_ms", "0")
-                    if range.DoesExist("time_range") then
-                        timeRange = range.time_range
-                        if GetInterface(timeRange, "ifAssociativeArray") <> invalid then
-                            RemoveDefaultField(timeRange, "start_ticks", "0")
-                        end if
-                    end if
-                    if range.DoesExist("format_id") then
-                        formatId = range.format_id
-                        KeepOnlyKeys(formatId, CreateKeySet(["itag", "last_modified"]))
-                    end if
-                end if
-            end for
+    if HasField(message, "client_abr_state") then
+        stateSource = LookupField(message, "client_abr_state")
+        if GetInterface(stateSource, "ifAssociativeArray") <> invalid then
+            normalizedState = {}
+            AssignFieldIfPresent(stateSource, normalizedState, "playback_rate")
+            AssignFieldIfPresent(stateSource, normalizedState, "bandwidth_estimate")
+            AssignFieldIfPresent(stateSource, normalizedState, "enabled_track_types_bitfield")
+            AssignFieldIfPresent(stateSource, normalizedState, "sticky_resolution")
+            AssignFieldIfPresent(stateSource, normalizedState, "last_manual_selected_resolution")
+            RemoveDefaultField(normalizedState, "playback_rate", 1)
+            RemoveDefaultField(normalizedState, "bandwidth_estimate", "0")
+            RemoveDefaultField(normalizedState, "enabled_track_types_bitfield", 0)
+            RemoveDefaultField(normalizedState, "sticky_resolution", 0)
+            RemoveDefaultField(normalizedState, "last_manual_selected_resolution", 0)
+            ReplaceField(message, "client_abr_state", normalizedState)
         end if
     end if
 
-    if message.DoesExist("selected_format_ids") then
-        NormalizeFormatIdArray(message.selected_format_ids)
+    if HasField(message, "buffered_ranges") then
+        rangesSource = LookupField(message, "buffered_ranges")
+        if GetInterface(rangesSource, "ifArray") <> invalid then
+            normalizedRanges = CreateObject("roArray", rangesSource.Count(), true)
+            for each rangeSource in rangesSource
+                if GetInterface(rangeSource, "ifAssociativeArray") = invalid then
+                    continue for
+                end if
+                normalizedRange = {}
+                AssignFieldIfPresent(rangeSource, normalizedRange, "duration_ms")
+                AssignFieldIfPresent(rangeSource, normalizedRange, "end_segment_index")
+                AssignFieldIfPresent(rangeSource, normalizedRange, "start_segment_index")
+                RemoveDefaultField(normalizedRange, "duration_ms", "0")
+                RemoveDefaultField(normalizedRange, "end_segment_index", 0)
+                RemoveDefaultField(normalizedRange, "start_segment_index", 0)
+
+                formatId = NormalizeFormatIdObject(LookupField(rangeSource, "format_id"))
+                if formatId <> invalid then
+                    normalizedRange["format_id"] = formatId
+                end if
+
+                timeRangeSource = LookupField(rangeSource, "time_range")
+                if GetInterface(timeRangeSource, "ifAssociativeArray") <> invalid then
+                    normalizedTimeRange = {}
+                    AssignFieldIfPresent(timeRangeSource, normalizedTimeRange, "duration_ticks")
+                    AssignFieldIfPresent(timeRangeSource, normalizedTimeRange, "timescale")
+                    RemoveDefaultField(normalizedTimeRange, "duration_ticks", "0")
+                    RemoveDefaultField(normalizedTimeRange, "timescale", 0)
+                    if normalizedTimeRange.Count() > 0 then
+                        normalizedRange["time_range"] = normalizedTimeRange
+                    end if
+                end if
+
+                if normalizedRange.Count() > 0 then
+                    normalizedRanges.Push(normalizedRange)
+                end if
+            end for
+            ReplaceField(message, "buffered_ranges", normalizedRanges)
+        end if
     end if
 
-    if message.DoesExist("preferred_audio_format_ids") then
-        NormalizeFormatIdArray(message.preferred_audio_format_ids)
+    selectedFormats = NormalizeFormatIdArray(LookupField(message, "selected_format_ids"))
+    if selectedFormats <> invalid then
+        ReplaceField(message, "selected_format_ids", selectedFormats)
     end if
 
-    if message.DoesExist("preferred_video_format_ids") then
-        NormalizeFormatIdArray(message.preferred_video_format_ids)
+    preferredAudioFormats = NormalizeFormatIdArray(LookupField(message, "preferred_audio_format_ids"))
+    if preferredAudioFormats <> invalid then
+        ReplaceField(message, "preferred_audio_format_ids", preferredAudioFormats)
+    end if
+
+    preferredVideoFormats = NormalizeFormatIdArray(LookupField(message, "preferred_video_format_ids"))
+    if preferredVideoFormats <> invalid then
+        ReplaceField(message, "preferred_video_format_ids", preferredVideoFormats)
     end if
 
     RemoveEmptyArrayField(message, "preferred_subtitle_format_ids")
@@ -603,43 +819,62 @@ function NormalizeVideoPlaybackAbrDecoded(message as Dynamic) as Dynamic
     RemoveDefaultField(message, "field22", 0)
     RemoveDefaultField(message, "field23", 0)
 
-    if message.DoesExist("streamer_context") then
-        ctx = message.streamer_context
-        if GetInterface(ctx, "ifAssociativeArray") <> invalid then
-            if ctx.DoesExist("unsent_sabr_contexts") then
-                sabr = ctx.unsent_sabr_contexts
-                if GetInterface(sabr, "ifArray") <> invalid and sabr.Count() = 0 then
-                    ctx.Delete("unsent_sabr_contexts")
+    if HasField(message, "streamer_context") then
+        ctxSource = LookupField(message, "streamer_context")
+        if GetInterface(ctxSource, "ifAssociativeArray") <> invalid then
+            normalizedCtx = {}
+            AssignFieldIfPresent(ctxSource, normalizedCtx, "po_token")
+            clientInfoSource = LookupField(ctxSource, "client_info")
+            if GetInterface(clientInfoSource, "ifAssociativeArray") <> invalid then
+                normalizedClientInfo = {}
+                AssignFieldIfPresent(clientInfoSource, normalizedClientInfo, "os_name")
+                AssignFieldIfPresent(clientInfoSource, normalizedClientInfo, "os_version")
+                AssignFieldIfPresent(clientInfoSource, normalizedClientInfo, "client_name")
+                AssignFieldIfPresent(clientInfoSource, normalizedClientInfo, "client_version")
+                if normalizedClientInfo.Count() > 0 then
+                    normalizedCtx["client_info"] = normalizedClientInfo
                 end if
             end if
-            KeepOnlyKeys(ctx, CreateKeySet(["client_info", "po_token"]))
-            if ctx.DoesExist("client_info") then
-                clientInfo = ctx.client_info
-                KeepOnlyKeys(clientInfo, CreateKeySet(["os_name", "os_version", "client_name", "client_version"]))
-            end if
+            ReplaceField(message, "streamer_context", normalizedCtx)
         end if
     end if
+
+    ustreamerConfig = LookupField(message, "video_playback_ustreamer_config")
+    ReplaceField(message, "video_playback_ustreamer_config", ustreamerConfig)
 
     return message
 end function
 
-sub NormalizeFormatIdArray(formats as Dynamic)
-    if formats = invalid then return
-    if GetInterface(formats, "ifArray") = invalid then return
-    for each format in formats
-        if GetInterface(format, "ifAssociativeArray") <> invalid then
-            KeepOnlyKeys(format, CreateKeySet(["itag", "last_modified"]))
+function NormalizeFormatIdArray(source as Dynamic) as Dynamic
+    if source = invalid then return invalid
+    if GetInterface(source, "ifArray") = invalid then return invalid
+    normalized = CreateObject("roArray", source.Count(), true)
+    for each entry in source
+        normalizedEntry = NormalizeFormatIdObject(entry)
+        if normalizedEntry <> invalid then
+            normalized.Push(normalizedEntry)
         end if
     end for
-end sub
+    return normalized
+end function
+
+function NormalizeFormatIdObject(source as Dynamic) as Dynamic
+    if source = invalid then return invalid
+    if GetInterface(source, "ifAssociativeArray") = invalid then return invalid
+    normalized = {}
+    AssignFieldIfPresent(source, normalized, "itag")
+    AssignFieldIfPresent(source, normalized, "last_modified")
+    if normalized.Count() = 0 then return invalid
+    return normalized
+end function
 
 sub RemoveEmptyArrayField(message as Dynamic, fieldName as String)
     if message = invalid then return
     if GetInterface(message, "ifAssociativeArray") = invalid then return
-    if message.DoesExist(fieldName) then
-        arr = message[fieldName]
+    if HasField(message, fieldName) then
+        arr = LookupField(message, fieldName)
         if GetInterface(arr, "ifArray") <> invalid and arr.Count() = 0 then
-            message.Delete(fieldName)
+            DeleteField(message, fieldName)
         end if
     end if
 end sub
@@ -648,7 +883,13 @@ function CreateKeySet(keys as Object) as Object
     set = {}
     if GetInterface(keys, "ifArray") = invalid then return set
     for each key in keys
-        set[key] = true
+        AddAllowedKey(set, key)
+        camelKey = SnakeToCamel(key)
+        AddAllowedKey(set, camelKey)
+        canonical = GetCanonicalSnakeKey(key)
+        if canonical <> "" then
+            AddAllowedKey(set, canonical)
+        end if
     end for
     return set
 end function
@@ -662,6 +903,11 @@ sub KeepOnlyKeys(map as Dynamic, allowed as Dynamic)
             map.Delete(key)
         end if
     end for
+end sub
+
+sub AddAllowedKey(target as Dynamic, key as String)
+    if target = invalid or key = invalid then return
+    target[key] = true
 end sub
 
 sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEncoded as String, baselineDecoded as Object, runtimeDecoded as Object)
@@ -683,13 +929,179 @@ sub LogMismatchDetails(testCase as Object, baselineEncoded as String, runtimeEnc
     print "    ---------------------------"
 end sub
 
+function SnakeToCamel(fieldName as String) as String
+    if fieldName = invalid then return ""
+    camel = ""
+    upperNext = false
+    lowerName = LCase(fieldName)
+    for i = 1 to Len(lowerName)
+        ch = Mid(lowerName, i, 1)
+        if ch = "_" then
+            upperNext = true
+        else if camel = "" then
+            camel = ch
+            upperNext = false
+        else if upperNext then
+            camel = camel + UCase(ch)
+            upperNext = false
+        else
+            camel = camel + ch
+        end if
+    end for
+    return camel
+end function
+
+function CamelToSnake(fieldName as String) as String
+    if fieldName = invalid then return ""
+    snake = ""
+    for i = 1 to Len(fieldName)
+        ch = Mid(fieldName, i, 1)
+        if ch >= "A" and ch <= "Z" then
+            if snake <> "" and Right(snake, 1) <> "_" then
+                snake = snake + "_"
+            end if
+            snake = snake + LCase(ch)
+        else
+            snake = snake + LCase(ch)
+        end if
+    end for
+    return snake
+end function
+
+function NormalizeFieldKey(key as String) as String
+    if key = invalid then return ""
+    if InStr(key, "_") > 0 then
+        return LCase(key)
+    end if
+    candidate = CamelToSnake(key)
+    if candidate <> key then
+        return candidate
+    end if
+    canonical = GetCanonicalSnakeKey(key)
+    if canonical <> "" then
+        return canonical
+    end if
+    return LCase(key)
+end function
+
+function GetCanonicalSnakeKey(rawKey as String) as String
+    map = GetCanonicalSnakeMap()
+    lower = LCase(rawKey)
+    if map.DoesExist(lower) then
+        return map[lower]
+    end if
+    return ""
+end function
+
+function GetCanonicalSnakeMap() as Object
+    globalAA = GetGlobalAA()
+    if globalAA.DoesExist("__pbCanonicalSnakeMap") then
+        return globalAA.__pbCanonicalSnakeMap
+    end if
+
+    canonical = {}
+    AddCanonicalSnakeKey(canonical, "client_abr_state")
+    AddCanonicalSnakeKey(canonical, "buffered_ranges")
+    AddCanonicalSnakeKey(canonical, "duration_ms")
+    AddCanonicalSnakeKey(canonical, "end_segment_index")
+    AddCanonicalSnakeKey(canonical, "format_id")
+    AddCanonicalSnakeKey(canonical, "start_segment_index")
+    AddCanonicalSnakeKey(canonical, "start_time_ms")
+    AddCanonicalSnakeKey(canonical, "time_range")
+    AddCanonicalSnakeKey(canonical, "duration_ticks")
+    AddCanonicalSnakeKey(canonical, "start_ticks")
+    AddCanonicalSnakeKey(canonical, "timescale")
+    AddCanonicalSnakeKey(canonical, "selected_format_ids")
+    AddCanonicalSnakeKey(canonical, "preferred_audio_format_ids")
+    AddCanonicalSnakeKey(canonical, "preferred_video_format_ids")
+    AddCanonicalSnakeKey(canonical, "preferred_subtitle_format_ids")
+    AddCanonicalSnakeKey(canonical, "streamer_context")
+    AddCanonicalSnakeKey(canonical, "client_info")
+    AddCanonicalSnakeKey(canonical, "po_token")
+    AddCanonicalSnakeKey(canonical, "unsent_sabr_contexts")
+    AddCanonicalSnakeKey(canonical, "playback_rate")
+    AddCanonicalSnakeKey(canonical, "bandwidth_estimate")
+    AddCanonicalSnakeKey(canonical, "enabled_track_types_bitfield")
+    AddCanonicalSnakeKey(canonical, "sticky_resolution")
+    AddCanonicalSnakeKey(canonical, "last_manual_selected_resolution")
+    AddCanonicalSnakeKey(canonical, "client_viewport_is_flexible")
+    AddCanonicalSnakeKey(canonical, "player_time_ms")
+    AddCanonicalSnakeKey(canonical, "drc_enabled")
+    AddCanonicalSnakeKey(canonical, "video_playback_ustreamer_config")
+    AddCanonicalSnakeKey(canonical, "field1000")
+    AddCanonicalSnakeKey(canonical, "field22")
+    AddCanonicalSnakeKey(canonical, "field23")
+
+    globalAA.__pbCanonicalSnakeMap = canonical
+    return canonical
+end function
+
+sub AddCanonicalSnakeKey(target as Object, snakeKey as String)
+    if target = invalid then return
+    camelLower = LCase(SnakeToCamel(snakeKey))
+    target[camelLower] = snakeKey
+end sub
+
+function ResolveFieldKey(container as Dynamic, snakeName as String) as String
+    if container = invalid then return ""
+    if GetInterface(container, "ifAssociativeArray") = invalid then return ""
+    if container.DoesExist(snakeName) then return snakeName
+    camelName = SnakeToCamel(snakeName)
+    if camelName <> snakeName and container.DoesExist(camelName) then return camelName
+    lowerCamel = LCase(camelName)
+    if lowerCamel <> camelName and container.DoesExist(lowerCamel) then return lowerCamel
+    return ""
+end function
+
+function HasField(container as Dynamic, snakeName as String) as Boolean
+    key = ResolveFieldKey(container, snakeName)
+    return key <> ""
+end function
+
+function LookupField(container as Dynamic, snakeName as String) as Dynamic
+    key = ResolveFieldKey(container, snakeName)
+    if key = "" then return invalid
+    return container[key]
+end function
+
+sub DeleteField(container as Dynamic, snakeName as String)
+    key = ResolveFieldKey(container, snakeName)
+    if key = "" then return
+    container.Delete(key)
+end sub
+
+sub ReplaceField(container as Dynamic, snakeName as String, value as Dynamic)
+    if container = invalid or GetInterface(container, "ifAssociativeArray") = invalid then return
+    DeleteField(container, snakeName)
+    if value <> invalid then
+        container[snakeName] = value
+    end if
+end sub
+
+sub AssignFieldIfPresent(source as Dynamic, target as Dynamic, snakeName as String)
+    if target = invalid or GetInterface(target, "ifAssociativeArray") = invalid then return
+    value = LookupField(source, snakeName)
+    if value <> invalid then
+        target[snakeName] = value
+    end if
+end sub
+
 function ExtractFieldValue(container as Dynamic, fieldName as String) as Dynamic
     if container = invalid then return invalid
     if GetInterface(container, "ifAssociativeArray") <> invalid then
-        if container.DoesExist(fieldName) then
-            return container[fieldName]
+        value = LookupField(container, fieldName)
+        if value <> invalid then
+            return value
         end if
-        return container.Lookup(fieldName)
+        camelName = SnakeToCamel(fieldName)
+        if camelName <> fieldName and container.DoesExist(camelName) then
+            return container.Lookup(camelName)
+        end if
+        return invalid
+    end if
+    camelName = SnakeToCamel(fieldName)
+    if camelName <> fieldName then
+        return container[camelName]
     end if
     return container[fieldName]
 end function
@@ -697,6 +1109,12 @@ end function
 function ValuesMatch(expected as Dynamic, actual as Dynamic) as Boolean
     if expected = invalid and actual = invalid then return true
     if expected = invalid or actual = invalid then return false
+
+    if IsAssociativeValue(expected) and IsAssociativeValue(actual) then
+        normalizedExpected = NormalizeAssociativeForComparison(expected)
+        normalizedActual = NormalizeAssociativeForComparison(actual)
+        return AssociativeValuesMatch(normalizedExpected, normalizedActual)
+    end if
 
     if IsArrayValue(expected) and IsArrayValue(actual) then
         if expected.Count() <> actual.Count() then return false
@@ -706,18 +1124,69 @@ function ValuesMatch(expected as Dynamic, actual as Dynamic) as Boolean
         return true
     end if
 
-    if IsAssociativeValue(expected) and IsAssociativeValue(actual) then
-        keys = expected.Keys()
-        otherKeys = actual.Keys()
-        if otherKeys.Count() <> keys.Count() then return false
-        for each key in keys
-            if actual.DoesExist(key) = false then return false
-            if not ValuesMatch(expected[key], actual[key]) then return false
-        end for
-        return true
-    end if
-
     return expected = actual
+end function
+
+function NormalizeAssociativeForComparison(value as Dynamic) as Dynamic
+    if value = invalid then return value
+    if GetInterface(value, "ifAssociativeArray") = invalid then return value
+    normalized = {}
+    keys = value.Keys()
+    for each key in keys
+        normalizedKey = NormalizeFieldKey(key)
+        normalized[normalizedKey] = NormalizeValueForComparison(value[key])
+    end for
+    return normalized
+end function
+
+function NormalizeValueForComparison(value as Dynamic) as Dynamic
+    if IsAssociativeValue(value) then
+        return NormalizeAssociativeForComparison(value)
+    else if IsArrayValue(value) then
+        normalizedArray = CreateObject("roArray", value.Count(), true)
+        for each item in value
+            normalizedArray.Push(NormalizeValueForComparison(item))
+        end for
+        return normalizedArray
+    end if
+    return value
+end function
+
+function ConvertAssociativeKeysToSnake(value as Dynamic) as Dynamic
+    if IsAssociativeValue(value) then
+        converted = {}
+        keys = value.Keys()
+        for each key in keys
+            normalizedKey = NormalizeFieldKey(key)
+            converted[normalizedKey] = ConvertAssociativeKeysToSnake(value[key])
+        end for
+        return converted
+    else if IsArrayValue(value) then
+        typeName = Type(value)
+        if typeName = "roByteArray" then return value
+        convertedArray = CreateObject("roArray", value.Count(), true)
+        for each entry in value
+            convertedArray.Push(ConvertAssociativeKeysToSnake(entry))
+        end for
+        return convertedArray
+    end if
+    return value
+end function
+
+function AssociativeValuesMatch(expected as Dynamic, actual as Dynamic) as Boolean
+    if expected = invalid and actual = invalid then return true
+    if expected = invalid or actual = invalid then return false
+    if GetInterface(expected, "ifAssociativeArray") = invalid or GetInterface(actual, "ifAssociativeArray") = invalid then
+        return expected = actual
+    end if
+    expectedKeys = expected.Keys()
+    actualKeys = actual.Keys()
+    if actualKeys.Count() <> expectedKeys.Count() then return false
+    for each key in expectedKeys
+        if actual.DoesExist(key) = false then return false
+        if not ValuesMatch(expected[key], actual[key]) then return false
+    end for
+    return true
 end function
 
 function IsArrayValue(value as Dynamic) as Boolean

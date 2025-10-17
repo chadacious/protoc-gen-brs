@@ -46,10 +46,13 @@ async function createProto(tempDir: string) {
   return protoPath;
 }
 
-async function generateBrightScript(protoPath: string, outputDir: string) {
+type DecodeCaseMode = "snake" | "camel" | "both";
+
+async function generateBrightScript(protoPath: string, outputDir: string, decodeCase: DecodeCaseMode = "snake") {
   await generateBrightScriptArtifacts({
     protoPaths: [protoPath],
     outputDir,
+    decodeFieldCase: decodeCase
   });
   const readMessage = async (name: string) =>
     fs.readFile(path.join(outputDir, "messages", `${name}.brs`), "utf8");
@@ -108,18 +111,18 @@ async function run() {
 
   assert.ok(int32File.includes("__pb_writeVarint(bytes, 8)"), "int32 encode should emit field tag");
   assert.ok(int32File.includes("valueValue = __pb_toSigned32FromString(valueResult.value)"), "int32 decode should compute signed helper value");
-  assert.ok(int32File.includes("message.value = valueValue"), "int32 decode should assign normalized value to field");
+  assert.ok(int32File.includes('message["value"] = valueValue'), "int32 decode should assign normalized value to field");
   assert.ok(uint32File.includes("__pb_writeVarint(bytes, 8)"), "uint32 encode should emit field tag");
   assert.ok(uint32File.includes("__pb_writeVarint64(bytes"), "uint32 encode should use 64-bit writer to avoid Int overflow");
   assert.ok(uint32File.includes("valueValue = __pb_toUnsigned32(valueResult.value)"), "uint32 decode should coerce to unsigned value");
-  assert.ok(uint32File.includes("message.value = valueValue"), "uint32 decode should assign coerced value");
+  assert.ok(uint32File.includes('message["value"] = valueValue'), "uint32 decode should assign coerced value");
   assert.ok(!uint32File.includes("value = Int(value)"), "uint32 encode should not truncate using Int()");
 
   assert.ok(uint64File.includes("__pb_writeVarint(bytes, 8)"), "uint64 encode should emit field tag");
   assert.ok(uint64File.includes("__pb_writeVarint64(bytes, field_value)"), "uint64 encode should write via 64-bit helper");
   assert.ok(uint64File.includes("valueResult = __pb_readVarint64(bytes, cursor)"), "uint64 decode should read via 64-bit helper");
   assert.ok(uint64File.includes("valueValue = valueResult.value"), "uint64 decode should keep unsigned decimal string");
-  assert.ok(uint64File.includes("message.value = valueValue"), "uint64 decode should assign unsigned string");
+  assert.ok(uint64File.includes('message["value"] = valueValue'), "uint64 decode should assign unsigned string");
   assert.ok(!uint64File.includes("__pb_toSignedInt64String"), "uint64 decode should not convert to signed representation");
 
   assert.ok(sint32File.includes("__pb_encodeZigZag32"), "sint32 encode should zigzag values");
@@ -136,7 +139,7 @@ async function run() {
   assert.ok(floatFile.includes("wireType = 5"), "float decode should use fixed32 wire type");
   assert.ok(floatFile.includes("floatResult = __pb_readFloat32(bytes, cursor)"), "float decode should read fixed32 chunk");
   assert.ok(floatFile.includes("valueValue = floatResult.value"), "float decode should capture decoded float");
-  assert.ok(floatFile.includes("message.value = valueValue"), "float decode should assign decoded float");
+  assert.ok(floatFile.includes('message["value"] = valueValue'), "float decode should assign decoded float");
 
   assert.ok(packedInt32File.includes("__pb_writeVarint(bytes, 10)"), "packed int32 encode should emit length-delimited tag");
   assert.ok(packedInt32File.includes("valuesPacked = __pb_createByteArray()"), "packed int32 encode should allocate packed buffer");
@@ -175,7 +178,7 @@ async function run() {
   assert.ok(enumFile.includes("EnumMessage_choice_normalizeEnum"), "enum encode should normalize string inputs");
   assert.ok(enumFile.includes("__pb_writeVarint(bytes, 8)"), "enum encode should write varint tag");
   assert.ok(enumFile.includes("choiceEnumValue = EnumMessage_choice_enumName(numericValue)"), "enum decode should convert numbers to labels");
-  assert.ok(enumFile.includes("message.choice = choiceEnumValue"), "enum decode should assign enum label to field");
+  assert.ok(enumFile.includes('message["choice"] = choiceEnumValue'), "enum decode should assign enum label to field");
 
   assert.ok(packedEnumFile.includes("__pb_writeVarint(choicesPacked, numericValue)"), "packed enum encode should write packed values");
   assert.ok(packedEnumFile.includes("choicesValues.Push(PackedEnumMessage_choices_enumName"), "packed enum decode should convert to labels");
@@ -191,10 +194,44 @@ async function run() {
   assert.ok(parentRepeatedMessageFile.includes("ChildMessageDecode"), "repeated message decode should decode child messages");
 
   assert.ok(camelCaseMessageFile.includes('else if message.DoesExist("sampleValue") then'), "camelCase support should check associative camel key for scalar fields");
-  assert.ok(camelCaseMessageFile.includes("field_sample_value = message.sampleValue"), "camelCase support should read object camelCase property when snake is missing");
+  assert.ok(camelCaseMessageFile.includes('field_sample_value = message["sampleValue"]'), "camelCase support should read object camelCase property when snake is missing");
   assert.ok(camelCaseMessageFile.includes('else if message.DoesExist("sampleValues") then'), "camelCase support should check associative camel key for repeated fields");
-  assert.ok(camelCaseMessageFile.includes("message.sample_value = sample_valueValue"), "camelCase decode should continue assigning snake_cased scalar field");
-  assert.ok(camelCaseMessageFile.includes("message.sample_values = sample_valuesValues"), "camelCase decode should continue assigning snake_cased repeated field");
+  assert.ok(camelCaseMessageFile.includes('message["sample_value"] = sample_valueValue'), "camelCase decode should continue assigning snake_cased scalar field");
+  assert.ok(camelCaseMessageFile.includes('message["sample_values"] = sample_valuesValues'), "camelCase decode should continue assigning snake_cased repeated field");
+
+  const camelOutputDir = path.join(tempRoot, "generated-camel");
+  const { camelCaseMessageFile: camelDecodedFile } = await generateBrightScript(protoPath, camelOutputDir, "camel");
+  assert.ok(
+    camelDecodedFile.includes('message["sampleValue"] = sample_valueValue'),
+    "camelCase decode option should assign camelCase scalar fields"
+  );
+  assert.ok(
+    camelDecodedFile.includes('message["sampleValues"] = sample_valuesValues'),
+    "camelCase decode option should assign camelCase repeated fields"
+  );
+  assert.ok(
+    !camelDecodedFile.includes('message["sample_value"] = sample_valueValue'),
+    "camelCase decode option should omit snake_case scalar assignment"
+  );
+
+  const bothOutputDir = path.join(tempRoot, "generated-both");
+  const { camelCaseMessageFile: camelBothFile } = await generateBrightScript(protoPath, bothOutputDir, "both");
+  assert.ok(
+    camelBothFile.includes('message["sample_value"] = sample_valueValue'),
+    "both decode option should retain snake_case scalar assignment"
+  );
+  assert.ok(
+    camelBothFile.includes('message["sampleValue"] = sample_valueValue'),
+    "both decode option should add camelCase scalar assignment"
+  );
+  assert.ok(
+    camelBothFile.includes('message["sample_values"] = sample_valuesValues'),
+    "both decode option should retain snake_case repeated assignment"
+  );
+  assert.ok(
+    camelBothFile.includes('message["sampleValues"] = sample_valuesValues'),
+    "both decode option should include camelCase repeated assignment"
+  );
 
   console.log("generator tests passed.");
 }
